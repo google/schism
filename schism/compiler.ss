@@ -11,9 +11,12 @@
   (define (wasm-header)
     (list #x00 #x61 #x73 #x6d #x01 #x00 #x00 #x00))
 
+  (define (make-vec length contents)
+    (append (number->leb-u8-list length) contents))
+  
   ;; id is the number, contents is a list of bytes
   (define (make-section id contents)
-    (cons id (append (number->leb-u8-list (length contents)) contents)))
+    (cons id (make-vec (length contents) contents)))
 
   (define (encode-type-vec-contents types)
     (if (null? types)
@@ -21,7 +24,7 @@
 	(append (encode-type (car types)) (encode-type-vec-contents (cdr types)))))
 
   (define (encode-type-vec types)
-    (append (number->leb-u8-list (length types)) (encode-type-vec-contents types)))
+    (make-vec (length types) (encode-type-vec-contents types)))
   
   (define (encode-type type)
     (cond
@@ -35,13 +38,25 @@
   
   (define (wasm-type-section types)
     ;; We have no types so far.
-    (make-section 1 (encode-type-vec '((fn (i32 i32) (i32))))))
-	  
+    (make-section 1 (encode-type-vec types)))
+
+  (define (encode-u32-vec-contents nums)
+    (if (null? nums)
+	'()
+	(append (number->leb-u8-list (car nums)) (encode-u32-vec-contents (cdr nums)))))
+
+  (define (encode-u32-vec nums)
+    (make-vec (length nums) (encode-u32-vec-contents nums)))
+  
+  (define (wasm-function-section function-type-ids)
+    (make-section 3 (encode-u32-vec function-type-ids)))
+  
   ;; Takes a library and returns a bytevector of the corresponding Wasm module
   ;; bytes
   (define (compile-library library)
     ;; For now just return the wasm header, which should be the smallest
     ;; possible module.
     (let ((module (append (wasm-header)
-			  (wasm-type-section '()))))
+			  (wasm-type-section '((fn (i32 i32) (i32))))
+			  (wasm-function-section '(0)))))
       (u8-list->bytevector module))))
