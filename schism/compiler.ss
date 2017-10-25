@@ -7,6 +7,15 @@
 	(list n)
 	(cons (bitwise-ior #x80 (bitwise-bit-field n 0 7))
 	      (number->leb-u8-list (bitwise-arithmetic-shift-right n 7)))))
+
+  (define (encode-chars chars)
+    (if (null? chars)
+	'()
+	(cons (char->integer (car chars)) (encode-chars (cdr chars)))))
+  
+  (define (encode-string s)
+    (let ((chars (string->list s)))
+      (make-vec (length chars) (encode-chars chars))))
   
   (define (wasm-header)
     (list #x00 #x61 #x73 #x6d #x01 #x00 #x00 #x00))
@@ -51,6 +60,19 @@
   (define (wasm-function-section function-type-ids)
     (make-section 3 (encode-u32-vec function-type-ids)))
 
+  (define (encode-export export)
+    (cond
+     ((eq? (car export) 'fn)
+      (append (encode-string (caddr export)) (cons #x00 (number->leb-u8-list (cadr export)))))))
+  
+  (define (encode-export-contents exports)
+    (if (null? exports)
+	'()
+	(append (encode-export (car exports)) (encode-export-contents (cdr exports)))))
+  
+  (define (wasm-export-section exports)
+    (make-section 7 (make-vec (length exports) (encode-export-contents exports))))
+    
   (define (encode-exprs exprs)
     (if (null? exprs)
 	'(#x0b)
@@ -85,5 +107,6 @@
     (let ((module (append (wasm-header)
 			  (wasm-type-section '((fn (i32 i32) (i32))))
 			  (wasm-function-section '(0))
+			  (wasm-export-section '((fn 0 "foo")))
 			  (wasm-code-section '((() (i32.const 5)))))))
       (u8-list->bytevector module))))

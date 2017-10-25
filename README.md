@@ -31,6 +31,7 @@ until it is self-hosted. Here are some of the current restrictions:
   * Symbols
   * Pairs
   * Bytevectors (basically only for generating the final .wasm bytes)
+  * Strings
 
 As more features are supported by the compiler, we will remove these
 restrictions.
