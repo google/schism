@@ -4,7 +4,7 @@
 	(schism compiler))
 
 (put-bytevector
- (standard-output-port)
+ (open-file-output-port "out.wasm" (file-options no-fail))
  (compile-library
   '(library
        (import (rnrs))
