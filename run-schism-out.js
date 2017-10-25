@@ -2,8 +2,13 @@
 
 const fs = require('fs');
 
-let file = fs.readFileSync('out.wasm');
-let wasm = new WebAssembly.Module(file);
+const file = fs.readFileSync('out.wasm');
+const wasm = new WebAssembly.Module(file);
 
 const util = require('util')
 console.log(util.inspect(wasm, {showHidden: false, depth: null}));
+
+WebAssembly.instantiate(wasm).then((instance) => {
+  console.log(util.inspect(instance, {showHidden: false, depth: null}));
+  console.log(instance.exports.foo(5));
+});
