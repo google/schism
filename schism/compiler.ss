@@ -50,6 +50,32 @@
   
   (define (wasm-function-section function-type-ids)
     (make-section 3 (encode-u32-vec function-type-ids)))
+
+  (define (encode-exprs exprs)
+    (if (null? exprs)
+	'(#x0b)
+	(append (encode-expr (car exprs)) (encode-exprs (cdr exprs)))))
+  
+  (define (encode-expr expr)
+    (if (pair? expr)
+	(cond
+	 ((eq? (car expr) 'begin)
+	  (encode-exprs (cdr expr)))
+	 ((eq? (car expr) 'i32.const)
+	  (cons #x41 (number->leb-u8-list (cadr expr)))))))
+  
+  (define (encode-code locals body)
+    (let ((contents (append (encode-type-vec locals)
+			    (encode-exprs body))))
+      (make-vec (length contents) contents)))
+
+  (define (encode-codes codes)
+    (if (null? codes)
+	'()
+	(append (encode-code (caar codes) (cdar codes)) (encode-codes (cdr codes)))))
+  
+  (define (wasm-code-section codes)
+    (make-section 10 (make-vec (length codes) (encode-codes codes))))
   
   ;; Takes a library and returns a bytevector of the corresponding Wasm module
   ;; bytes
@@ -58,5 +84,6 @@
     ;; possible module.
     (let ((module (append (wasm-header)
 			  (wasm-type-section '((fn (i32 i32) (i32))))
-			  (wasm-function-section '(0)))))
+			  (wasm-function-section '(0))
+			  (wasm-code-section '((() (i32.const 5)))))))
       (u8-list->bytevector module))))
