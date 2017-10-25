@@ -11,3 +11,26 @@ ways to use WebAssembly. This includes implementing garbage collection, possibly
 using the WebAssembly GC proposal, dynamic linking and code generation, etc.
 
 Chez Scheme is used for development, but other Schemes will probably work too.
+
+As mentioned, the goal is to prioritize features needed for self hosting. A
+corollary to this is that Schism will use a greatly reduced subset of Scheme
+until it is self-hosted. Here are some of the current restrictions:
+
+* No `lambda`, no closures.
+* Functions may only be created with `define`, and particularly only the
+  `(define (foo args ...) body)` form.
+* No use of `syntax-case`, `syntax-rules`, or `define-syntax`.
+* Only one file to start with, so we don't have to figure out how to link
+  multiple libraries.
+* Only use `define` to create functions, not global variables or objects.
+* Use a small amount of syntax, because we won't have a proper macro expander at
+  first. There will be a pass to expand some of the simpler and more useful
+  macros.
+* Restrict data types and operations on those. For now, we can use:
+  * Numbers
+  * Symbols
+  * Pairs
+  * Bytevectors (basically only for generating the final .wasm bytes)
+
+As more features are supported by the compiler, we will remove these
+restrictions.
