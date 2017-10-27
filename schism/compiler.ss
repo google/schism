@@ -24,6 +24,15 @@
 	  ((body (compile-expr (caddr fn) args)))
 	(list '() body)))) ;; the empty list holds the types of the locals
 
+  (define (function->type fn)
+    ;; Functions are assumed to always return an i32 and take some number of i32s as inputs
+    (let ((args (args->types (cdadr fn))))
+      (cons 'fn (list args '(i32)))))
+  (define (functions->types fns)
+    (if (null? fns)
+	'()
+	(cons (function->type (car fns)) (functions->types (cdr fns)))))
+  
   (define (compile-functions fn*)
     (if (null? fn*)
 	'()
@@ -44,9 +53,14 @@
 	(let ((name (caadar functions)))
 	  (let ((exports (replace-export exports name index)))
 	    (build-exports exports (cdr functions) (+ 1 index))))))
+
+  (define (number-list ls i)
+    (if (null? ls)
+	'()
+	(cons i (number-list (cdr ls) (+ 1 i)))))
   
   ;; ====================== ;;
-  ;; Wasm Binary Generation
+  ;; Wasm Binary Generation ;;
   ;; ====================== ;;
   
   (define (number->leb-u8-list n)
@@ -151,11 +165,12 @@
   (define (compile-library library)
     (let ((parsed-lib (parse-library library))) ;; (parsed-lib : (exports . functions)
       (let ((exports (car parsed-lib))
+	    (types (functions->types (cdr parsed-lib)))
 	    (functions (compile-functions (cdr parsed-lib))))
 	(let ((exports (build-exports exports (cdr parsed-lib) 0)))
 	  (let ((module (append (wasm-header)
-				(wasm-type-section '((fn (i32 i32) (i32))))
-				(wasm-function-section '(0))
+				(wasm-type-section types)
+				(wasm-function-section (number-list functions 0))
 				(wasm-export-section exports)
 				(wasm-code-section functions))))
 	    (u8-list->bytevector module)))))))
