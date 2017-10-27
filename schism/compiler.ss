@@ -2,6 +2,38 @@
   (export compile-library)
   (import (rnrs))
 
+  (define (parse-library lib)
+    ;; For now just assume it's correctly formed. We can do error checking later.
+    (let ((body (cddr lib))) ;; skip the library and name
+      (let ((exports (cdar body)) ;; names of the functions exported
+	    (functions (cddr body)))
+	(cons exports functions))))
+
+  (define (args->types args)
+    (if (null? args)
+	'()
+	(cons 'i32 (cdr args))))
+
+  (define (compile-expr expr env)
+    (cond
+     ((number? expr) (list 'i32.const expr))))
+  
+  (define (compile-function fn)
+    (let ((args (cdadr fn))) ;; basically just a list of the arguments
+      (let ((types (args->types args))
+	    ;; for now we assume bodies have a single expression
+	    (body (compile-expr (caddr fn) args)))
+	(list args body))))
+
+  (define (compile-functions fn*)
+    (if (null? fn*)
+	'()
+	(cons (compile-function (car fn*)) (compile-functions (cdr fn*)))))
+  
+  ;; ====================== ;;
+  ;; Wasm Binary Generation
+  ;; ====================== ;;
+  
   (define (number->leb-u8-list n)
     (if (and (< n #x80) (> n (- #x80)))
 	(list n)
@@ -102,11 +134,12 @@
   ;; Takes a library and returns a bytevector of the corresponding Wasm module
   ;; bytes
   (define (compile-library library)
-    ;; For now just return the wasm header, which should be the smallest
-    ;; possible module.
-    (let ((module (append (wasm-header)
-			  (wasm-type-section '((fn (i32 i32) (i32))))
-			  (wasm-function-section '(0))
-			  (wasm-export-section '((fn 0 "foo")))
-			  (wasm-code-section '((() (i32.const 5)))))))
-      (u8-list->bytevector module))))
+    (let ((parsed-lib (parse-library library))) ;; (parsed-lib : (args . functions)
+      (let ((functions (compile-functions (cdr parsed-lib))))
+	(display functions) (newline)
+	(let ((module (append (wasm-header)
+			      (wasm-type-section '((fn (i32 i32) (i32))))
+			      (wasm-function-section '(0))
+			      (wasm-export-section '((fn 0 "foo")))
+			      (wasm-code-section functions))))
+	  (u8-list->bytevector module))))))
