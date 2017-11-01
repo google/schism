@@ -5,23 +5,20 @@ const child_process = require('child_process');
 const fs = require('fs');
 const util = require('util')
 
-function runTest(name) {
-    child_process.exec(`./schism.ss ${name}`, (error, stdout, stderr) => {
-	console.log(`stdout: ${stdout}`);
-	console.log(`stderr: ${stderr}`);
-	if (error) {
-	    throw error;
-	}
+async function runTest(name) {
+    const { stdout, stderr } = await util.promisify(child_process.exec)(`./schism.ss ${name}`);
+    
+    console.log(`stdout: ${stdout}`);
+    console.log(`stderr: ${stderr}`);
+    
+    const file = fs.readFileSync('out.wasm');
+    const wasm = new WebAssembly.Module(file);
 
-	const file = fs.readFileSync('out.wasm');
-	const wasm = new WebAssembly.Module(file);
+    const instance = await WebAssembly.instantiate(wasm);
 
-	WebAssembly.instantiate(wasm).then((instance) => {
-	    const result = instance.exports['do-test']();
-
-	    assert.equal(result, 1, "test failed");
-	});
-    });
+    const result = instance.exports['do-test']();
+	
+    assert.equal(result, 1, "test failed");
 }
 
 async function runTests() {
@@ -29,7 +26,7 @@ async function runTests() {
     for (const test of files) {
 	if (test.endsWith(".ss")) {
 	    console.info(`Running test ${test}`);
-	    runTest(`test/${test}`);
+	    await runTest(`test/${test}`);
 	}
     }
 }
