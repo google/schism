@@ -15,16 +15,23 @@ function runTest(name) {
 
 	const file = fs.readFileSync('out.wasm');
 	const wasm = new WebAssembly.Module(file);
-	console.log(util.inspect(wasm, {showHidden: false, depth: null}));
 
 	WebAssembly.instantiate(wasm).then((instance) => {
-	    console.log(util.inspect(instance, {showHidden: false, depth: null}));
 	    const result = instance.exports['do-test']();
-	    console.log(result);
 
 	    assert.equal(result, 1, "test failed");
 	});
     });
 }
 
-runTest('test/trivial.ss');
+async function runTests() {
+    const files = await util.promisify(fs.readdir)('test');
+    for (const test of files) {
+	if (test.endsWith(".ss")) {
+	    console.info(`Running test ${test}`);
+	    runTest(`test/${test}`);
+	}
+    }
+}
+
+runTests();
