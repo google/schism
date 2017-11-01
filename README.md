@@ -35,3 +35,12 @@ until it is self-hosted. Here are some of the current restrictions:
 
 As more features are supported by the compiler, we will remove these
 restrictions.
+
+## Testing
+
+We currently use a very simple testing protocol. The `test/` directory
+includes a number of Scheme libraries, each of which export a function
+called `do-test`. This function can do whatever it wants, but then
+must return 1 if the test passes and 0 otherwise. Once booleans are
+supported, these tests will return `#f` on failure.
+
