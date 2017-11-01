@@ -44,3 +44,4 @@ called `do-test`. This function can do whatever it wants, but then
 must return 1 if the test passes and 0 otherwise. Once booleans are
 supported, these tests will return `#f` on failure.
 
+To run all the tests, do `./run-tests.js`.
