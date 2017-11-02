@@ -12,11 +12,12 @@
   (define (args->types args)
     (if (null? args)
 	'()
-	(cons 'i32 (cdr args))))
+	(cons 'i32 (args->types (cdr args)))))
 
   (define (compile-expr expr env)
     (cond
-     ((number? expr) (list 'i32.const expr))))
+     ((number? expr) (list 'i32.const expr))
+     (else (display expr) (newline) (error 'compile-expr "Unrecognized expression"))))
   
   (define (compile-function fn)
     (let ((args (cdadr fn))) ;; basically just a list of the arguments
@@ -104,10 +105,10 @@
      ((eq? type 'f64) '(#x7c))
      ;; functions are (fn (t1 ...) (t2 ...)), for t1 ... -> t2 ...
      ((and (pair? type) (eq? (car type) 'fn))
-      (cons #x60 (append (encode-type-vec (cadr type)) (encode-type-vec (caddr type)))))))
+      (cons #x60 (append (encode-type-vec (cadr type)) (encode-type-vec (caddr type)))))
+     (else (display type) (error 'encode-type "Unrecognized type"))))
   
   (define (wasm-type-section types)
-    ;; We have no types so far.
     (make-section 1 (encode-type-vec types)))
 
   (define (encode-u32-vec-contents nums)
