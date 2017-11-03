@@ -8,7 +8,11 @@
 	(index-of-helper x (cdr ls) (+ 1 index))))
   (define (index-of x ls)
     (index-of-helper x ls 0))
-  
+
+  (define (parse-exprs exprs)
+    (if (null? exprs)
+	'()
+	(cons (parse-expr (car exprs)) (parse-exprs (cdr exprs)))))
   (define (parse-expr expr)
     (cond
      ((number? expr)
@@ -18,7 +22,7 @@
 	(cond
 	 (else
 	  ;; this is a function call
-	  (cons 'call expr)))))
+	  (cons 'call (cons (car expr) (parse-exprs (cdr expr))))))))
      (else
       (display expr) (newline)
       (error 'parse-expr "Unrecognized expression"))))
@@ -73,12 +77,13 @@
 
   (define (function->type fn)
     ;; Functions are assumed to always return an i32 and take some number of i32s as inputs
-    (let ((args (args->types (cddadr fn))))
+    (let ((args (args->types (cdar fn))))
       (cons 'fn (list args '(i32)))))
   (define (functions->types fns)
     (if (null? fns)
 	'()
-	(cons (function->type (car fns)) (functions->types (cdr fns)))))
+	(let ((type (function->type (car fns))))
+	  (cons type (functions->types (cdr fns))))))
 
   (define (function->name fn)
     (caar fn))
