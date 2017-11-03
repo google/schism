@@ -2,11 +2,51 @@
   (export compile-library)
   (import (rnrs))
 
+  (define (index-of-helper x ls index)
+    (if (eq? x (car ls))
+	index
+	(index-of-helper x (cdr ls) (+ 1 index))))
+  (define (index-of x ls)
+    (index-of-helper x ls 0))
+  
+  (define (parse-expr expr)
+    (cond
+     ((number? expr)
+      (list 'number expr))
+     ((pair? expr)
+      (let ((op (car expr)))
+	(cond
+	 (else
+	  ;; this is a function call
+	  (cons 'call expr)))))
+     (else
+      (display expr) (newline)
+      (error 'parse-expr "Unrecognized expression"))))
+  
+  (define (parse-body* body*)
+    (if (null? body*)
+	'()
+	(cons (parse-expr (car body*)) (parse-body* (cdr body*)))))
+  (define (parse-body body)
+    ;; expr ... -> (begin expr ...)
+    (cons 'begin (parse-body* body)))
+  
+  (define (parse-function function)
+    (let ((name (caadr function))
+	  (args (cdadr function))
+	  (body (parse-body (cddr function))))
+      (list (cons name args) body)))
+
+  (define (parse-functions functions)
+    (if (null? functions)
+	'()
+	(cons (parse-function (car functions)) (parse-functions (cdr functions)))))
+  
   (define (parse-library lib)
     ;; For now just assume it's correctly formed. We can do error checking later.
     (let ((body (cddr lib))) ;; skip the library and name
       (let ((exports (cdar body)) ;; names of the functions exported
-	    (functions (cddr body)))
+	    (functions (parse-functions (cddr body))))
 	(cons exports functions))))
 
   (define (args->types args)
@@ -14,25 +54,38 @@
 	'()
 	(cons 'i32 (args->types (cdr args)))))
 
+  (define (compile-exprs exprs env)
+    (if (null? exprs)
+	'()
+	(cons (compile-expr (car exprs) env) (compile-exprs (cdr exprs) env))))
   (define (compile-expr expr env)
-    (cond
-     ((number? expr) (list 'i32.const expr))
-     (else (display expr) (newline) (error 'compile-expr "Unrecognized expression"))))
+    (let ((tag (car expr)))
+      (cond
+       ((eq? tag 'begin) (cons 'begin (compile-exprs (cdr expr) env)))
+       ((eq? tag 'number) (cons 'i32.const (cdr expr)))
+       ((eq? tag 'call) (cons 'call (cons (cadr expr) (compile-exprs (cddr expr) env))))
+       (else (display expr) (newline) (error 'compile-expr "Unrecognized expression")))))
   
   (define (compile-function fn)
     (let ((args (cdadr fn))) ;; basically just a list of the arguments
-      (let ;; for now we assume bodies have a single expression
-	  ((body (compile-expr (caddr fn) args)))
+      (let ((body (compile-expr (cadr fn) args)))
 	(list '() body)))) ;; the empty list holds the types of the locals
 
   (define (function->type fn)
     ;; Functions are assumed to always return an i32 and take some number of i32s as inputs
-    (let ((args (args->types (cdadr fn))))
+    (let ((args (args->types (cddadr fn))))
       (cons 'fn (list args '(i32)))))
   (define (functions->types fns)
     (if (null? fns)
 	'()
 	(cons (function->type (car fns)) (functions->types (cdr fns)))))
+
+  (define (function->name fn)
+    (caar fn))
+  (define (functions->names fns)
+    (if (null? fns)
+	'()
+	(cons (function->name (car fns)) (functions->names (cdr fns)))))
   
   (define (compile-functions fn*)
     (if (null? fn*)
@@ -51,7 +104,7 @@
   (define (build-exports exports functions index)
     (if (null? functions)
 	exports
-	(let ((name (caadar functions)))
+	(let ((name (caaar functions)))
 	  (let ((exports (replace-export exports name index)))
 	    (build-exports exports (cdr functions) (+ 1 index))))))
 
@@ -59,6 +112,26 @@
     (if (null? ls)
 	'()
 	(cons i (number-list (cdr ls) (+ 1 i)))))
+
+  (define (resolve-calls-exprs exprs env)
+    (if (null? exprs)
+	'()
+	(cons (resolve-calls-expr (car exprs) env) (resolve-calls-exprs (cdr exprs) env))))
+  (define (resolve-calls-expr expr env)
+    (let ((tag (car expr)))
+      (cond
+       ((eq? tag 'i32.const) expr)
+       ((eq? tag 'begin) (cons 'begin (resolve-calls-exprs (cdr expr) env)))
+       ((eq? tag 'call) (cons 'call (cons (index-of (cadr expr) env) (cddr expr))))
+       (else
+	(display expr) (newline)
+	(error 'resolve-calls-expr "Unrecognized expression")))))
+  (define (resolve-calls-fn function env)
+    (list (car function) (resolve-calls-expr (cadr function) env)))
+  (define (resolve-calls functions env)
+    (if (null? functions)
+	'()
+	(cons (resolve-calls-fn (car functions) env) (resolve-calls (cdr functions) env))))
   
   ;; ====================== ;;
   ;; Wasm Binary Generation ;;
@@ -106,7 +179,7 @@
      ;; functions are (fn (t1 ...) (t2 ...)), for t1 ... -> t2 ...
      ((and (pair? type) (eq? (car type) 'fn))
       (cons #x60 (append (encode-type-vec (cadr type)) (encode-type-vec (caddr type)))))
-     (else (display type) (error 'encode-type "Unrecognized type"))))
+     (else (display type) (newline) (error 'encode-type "Unrecognized type"))))
   
   (define (wasm-type-section types)
     (make-section 1 (encode-type-vec types)))
@@ -137,26 +210,33 @@
     
   (define (encode-exprs exprs)
     (if (null? exprs)
-	'(#x0b)
+	'()
 	(append (encode-expr (car exprs)) (encode-exprs (cdr exprs)))))
   
   (define (encode-expr expr)
-    (if (pair? expr)
-	(cond
-	 ((eq? (car expr) 'begin)
-	  (encode-exprs (cdr expr)))
-	 ((eq? (car expr) 'i32.const)
-	  (cons #x41 (number->leb-u8-list (cadr expr)))))))
+    (let ((tag (car expr)))
+      (cond
+       ((eq? tag 'begin)
+	(encode-exprs (cdr expr)))
+       ((eq? tag 'i32.const)
+	(cons #x41 (number->leb-u8-list (cadr expr))))
+       ((eq? tag 'call)
+	(append (encode-exprs (cddr expr))
+		(cons #x10 (number->leb-u8-list (cadr expr)))))
+       (else
+	(display expr) (newline)
+	(error 'encode-expr "Unrecognized expr")))))
   
   (define (encode-code locals body)
     (let ((contents (append (encode-type-vec locals)
-			    (encode-exprs body))))
+			    (encode-expr body)
+			    '(#x0b))))
       (make-vec (length contents) contents)))
 
   (define (encode-codes codes)
     (if (null? codes)
 	'()
-	(append (encode-code (caar codes) (cdar codes)) (encode-codes (cdr codes)))))
+	(append (encode-code (caar codes) (cadar codes)) (encode-codes (cdr codes)))))
   
   (define (wasm-code-section codes)
     (make-section 10 (make-vec (length codes) (encode-codes codes))))
@@ -167,8 +247,9 @@
     (let ((parsed-lib (parse-library library))) ;; (parsed-lib : (exports . functions)
       (let ((exports (car parsed-lib))
 	    (types (functions->types (cdr parsed-lib)))
-	    (functions (compile-functions (cdr parsed-lib))))
-	(let ((exports (build-exports exports (cdr parsed-lib) 0)))
+	    (function-names (functions->names (cdr parsed-lib))))
+	(let ((exports (build-exports exports (cdr parsed-lib) 0))
+	      (functions (resolve-calls (compile-functions (cdr parsed-lib)) function-names)))
 	  (let ((module (append (wasm-header)
 				(wasm-type-section types)
 				(wasm-function-section (number-list functions 0))
