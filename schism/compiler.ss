@@ -2,12 +2,32 @@
   (export compile-library)
   (import (rnrs))
 
+  (define (tag-size) 3)
+  
+  (define (tag-constant value tag)
+    (bitwise-ior (bitwise-arithmetic-shift-left value (tag-size)) tag))
+  
+  ;; fixnums are 0 so most arithmetic doesn't require shifting
+  (define (fixnum-tag) 0)
+  ;; constant-tag is used for implementation constants, such as #f, #t and ()
+  (define (constant-tag) 1)
+  (define (constant-false) (tag-constant 0 (constant-tag)))
+  (define (constant-true) (tag-constant 1 (constant-tag))) 
+  
+  ;; ====================== ;;
+  ;; Helpers, etc.          ;;
+  ;; ====================== ;;
+
   (define (index-of-helper x ls index)
     (if (eq? x (car ls))
 	index
 	(index-of-helper x (cdr ls) (+ 1 index))))
   (define (index-of x ls)
     (index-of-helper x ls 0))
+
+  ;; ====================== ;;
+  ;; Parsing                ;;
+  ;; ====================== ;;
 
   (define (parse-exprs exprs)
     (if (null? exprs)
@@ -17,6 +37,7 @@
     (cond
      ((number? expr)
       (list 'number expr))
+     ((boolean? expr) (list 'bool expr))
      ((symbol? expr)
       (list 'var expr))
      ((pair? expr)
@@ -73,6 +94,59 @@
 	'()
 	(cons 'i32 (args->types (cdr args)))))
 
+  
+  ;; ====================== ;;
+  ;; Apply representation   ;;
+  ;; ====================== ;;
+
+  (define (apply-representation fn*)
+    (if (null? fn*)
+	'()
+	(cons (apply-representation-fn (car fn*)) (apply-representation (cdr fn*)))))
+  (define (apply-representation-fn fn)
+    (let ((def (car fn))
+	  (body (cadr fn)))
+      (list def (apply-representation-expr body))))
+  (define (apply-representation-expr expr)
+    (let ((tag (car expr)))
+      (cond
+       ((eq? tag 'bool)
+	(list 'ptr (if (cadr expr)
+		       (constant-true)
+		       (constant-false))))
+       ((eq? tag 'begin)
+	(cons 'begin (apply-representation-expr* (cdr expr))))
+       ((eq? tag 'var) expr)
+       ((eq? tag 'number) expr)
+       ((eq? tag 'call)
+	(cons 'call (cons (cadr expr) (apply-representation-expr* (cddr expr)))))
+       ((eq? tag 'if)
+	(let ((t (cadr expr))
+	      (c (caddr expr))
+	      (a (cadddr expr)))
+	  (list 'if
+		(apply-representation-pred t)
+		(apply-representation-expr c)
+		(apply-representation-expr a))))
+       (else
+	(display expr) (newline)
+	(error 'apply-representation-expr "Unrecognized expr")))))
+  (define (apply-representation-expr* expr*)
+    (if (null? expr*)
+	'()
+	(cons (apply-representation-expr (car expr*)) (apply-representation-expr* (cdr expr*)))))
+  (define (apply-representation-pred pred)
+    (let ((tag (car pred)))
+      (cond
+       ((eq? tag 'zero?) (list 'zero? (apply-representation-expr (cadr pred))))
+       (else
+	(display pred) (newline)
+	(error 'apply-representation-pred "Unrecognized pred")))))
+	   
+  ;; ====================== ;;
+  ;; Compile (make wasm)    ;;
+  ;; ====================== ;;
+
   (define (compile-exprs exprs env)
     (if (null? exprs)
 	'()
@@ -82,6 +156,7 @@
       (cond
        ((eq? tag 'begin) (cons 'begin (compile-exprs (cdr expr) env)))
        ((eq? tag 'number) (cons 'i32.const (cdr expr)))
+       ((eq? tag 'ptr) (cons 'i32.const (cdr expr)))
        ((eq? tag 'var) (list 'get-local (index-of (cadr expr) env)))
        ((eq? tag 'call) (cons 'call (cons (cadr expr) (compile-exprs (cddr expr) env))))
        ((eq? tag 'if)
@@ -303,7 +378,11 @@
 	    (types (functions->types (cdr parsed-lib)))
 	    (function-names (functions->names (cdr parsed-lib))))
 	(let ((exports (build-exports exports (cdr parsed-lib) 0))
-	      (functions (resolve-calls (compile-functions (cdr parsed-lib)) function-names)))
+	      (functions (resolve-calls
+			  (compile-functions
+			   (apply-representation
+			    (cdr parsed-lib)))
+			  function-names)))
 	  (let ((module (append (wasm-header)
 				(wasm-type-section types)
 				(wasm-function-section (number-list functions 0))
