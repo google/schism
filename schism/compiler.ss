@@ -55,14 +55,20 @@
       (display expr) (newline)
       (error 'parse-expr "Unrecognized expression"))))
   (define (parse-pred expr)
-    (let ((op (car expr)))
-      (cond
-       ((eq? op 'zero?)
-	(list 'zero? (parse-expr (cadr expr))))
-       (else
-	(display expr) (newline)
-	(error 'parse-pred "Unrecognized predicate")))))
-  
+    (cond
+     ((boolean? expr) (list 'bool expr))
+     ((pair? expr)
+	(let ((op (car expr)))
+	  (cond
+	   ((eq? op 'zero?)
+	    (list 'zero? (parse-expr (cadr expr))))
+	   (else
+	    (display expr) (newline)
+	    (error 'parse-pred "Unrecognized predicate")))))
+     (else
+      (display expr) (newline)
+      (error 'parse-pred "Unrecognized predicate"))))
+	  
   (define (parse-body* body*)
     (if (null? body*)
 	'()
@@ -139,6 +145,7 @@
     (let ((tag (car pred)))
       (cond
        ((eq? tag 'zero?) (list 'zero? (apply-representation-expr (cadr pred))))
+       ((eq? tag 'bool) pred)
        (else
 	(display pred) (newline)
 	(error 'apply-representation-pred "Unrecognized pred")))))
@@ -170,6 +177,12 @@
       (cond
        ((eq? op 'zero?)
 	(list 'i32.eqz (compile-expr (cadr expr) env)))
+       ((eq? op 'bool)
+       	;; Since we're in pred context, bools get translated into
+	;; things that go directly into if.
+	(if (cadr expr)
+	    (list 'i32.const 1)
+	    (list 'i32.const 0)))
        (else
 	(display expr) (newline)
 	(error 'compile-pred "Unrecognized predicate")))))
