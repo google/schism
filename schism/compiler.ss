@@ -22,12 +22,25 @@
      ((pair? expr)
       (let ((op (car expr)))
 	(cond
+	 ((eq? op 'if)
+	  (let ((t (cadr expr))
+		(c (caddr expr))
+		(a (cadddr expr)))
+	    (list 'if (parse-pred t) (parse-expr c) (parse-expr a))))
 	 (else
 	  ;; this is a function call
 	  (cons 'call (cons (car expr) (parse-exprs (cdr expr))))))))
      (else
       (display expr) (newline)
       (error 'parse-expr "Unrecognized expression"))))
+  (define (parse-pred expr)
+    (let ((op (car expr)))
+      (cond
+       ((eq? op 'zero?)
+	(list 'zero? (parse-expr (cadr expr))))
+       (else
+	(display expr) (newline)
+	(error 'parse-pred "Unrecognized predicate")))))
   
   (define (parse-body* body*)
     (if (null? body*)
@@ -71,7 +84,20 @@
        ((eq? tag 'number) (cons 'i32.const (cdr expr)))
        ((eq? tag 'var) (list 'get-local (index-of (cadr expr) env)))
        ((eq? tag 'call) (cons 'call (cons (cadr expr) (compile-exprs (cddr expr) env))))
+       ((eq? tag 'if)
+	(let ((t (cadr expr))
+	      (c (caddr expr))
+	      (a (cadddr expr)))
+	  (list 'if (compile-pred t env) (compile-expr c env) (compile-expr a env))))
        (else (display expr) (newline) (error 'compile-expr "Unrecognized expression")))))
+  (define (compile-pred expr env)
+    (let ((op (car expr)))
+      (cond
+       ((eq? op 'zero?)
+	(list 'i32.eqz (compile-expr (cadr expr) env)))
+       (else
+	(display expr) (newline)
+	(error 'compile-pred "Unrecognized predicate")))))
   
   (define (compile-function fn)
     (let ((args (cdar fn))) ;; basically just a list of the arguments
@@ -132,6 +158,12 @@
        ((eq? tag 'get-local) expr)
        ((eq? tag 'begin) (cons 'begin (resolve-calls-exprs (cdr expr) env)))
        ((eq? tag 'call) (cons 'call (cons (index-of (cadr expr) env) (cddr expr))))
+       ((eq? tag 'if)
+	;; TODO: support calls in the predicate
+	(let ((t (cadr expr))
+	      (c (caddr expr))
+	      (a (cadddr expr)))
+	  (list 'if t (resolve-calls-expr c env) (resolve-calls-expr a env))))
        (else
 	(display expr) (newline)
 	(error 'resolve-calls-expr "Unrecognized expression")))))
@@ -229,11 +261,22 @@
 	(encode-exprs (cdr expr)))
        ((eq? tag 'i32.const)
 	(cons #x41 (number->leb-u8-list (cadr expr))))
+       ((eq? tag 'i32.eqz)
+	(append (encode-expr (cadr expr)) (list #x45)))
        ((eq? tag 'get-local)
 	(cons #x20 (number->leb-u8-list (cadr expr))))
        ((eq? tag 'call)
 	(append (encode-exprs (cddr expr))
 		(cons #x10 (number->leb-u8-list (cadr expr)))))
+       ((eq? tag 'if)
+	(let ((t (cadr expr))
+	      (c (caddr expr))
+	      (a (cadddr expr)))
+	  ;; For now, if blocks are assumed to always return i32
+	  (append (encode-expr t)
+		  (list #x04 #x7f) (encode-expr c)
+		  (list #x05) (encode-expr a)
+		  (list #x0b))))
        (else
 	(display expr) (newline)
 	(error 'encode-expr "Unrecognized expr")))))
