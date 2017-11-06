@@ -17,6 +17,8 @@
     (cond
      ((number? expr)
       (list 'number expr))
+     ((symbol? expr)
+      (list 'var expr))
      ((pair? expr)
       (let ((op (car expr)))
 	(cond
@@ -67,11 +69,12 @@
       (cond
        ((eq? tag 'begin) (cons 'begin (compile-exprs (cdr expr) env)))
        ((eq? tag 'number) (cons 'i32.const (cdr expr)))
+       ((eq? tag 'var) (list 'get-local (index-of (cadr expr) env)))
        ((eq? tag 'call) (cons 'call (cons (cadr expr) (compile-exprs (cddr expr) env))))
        (else (display expr) (newline) (error 'compile-expr "Unrecognized expression")))))
   
   (define (compile-function fn)
-    (let ((args (cdadr fn))) ;; basically just a list of the arguments
+    (let ((args (cdar fn))) ;; basically just a list of the arguments
       (let ((body (compile-expr (cadr fn) args)))
 	(list '() body)))) ;; the empty list holds the types of the locals
 
@@ -126,6 +129,7 @@
     (let ((tag (car expr)))
       (cond
        ((eq? tag 'i32.const) expr)
+       ((eq? tag 'get-local) expr)
        ((eq? tag 'begin) (cons 'begin (resolve-calls-exprs (cdr expr) env)))
        ((eq? tag 'call) (cons 'call (cons (index-of (cadr expr) env) (cddr expr))))
        (else
@@ -225,6 +229,8 @@
 	(encode-exprs (cdr expr)))
        ((eq? tag 'i32.const)
 	(cons #x41 (number->leb-u8-list (cadr expr))))
+       ((eq? tag 'get-local)
+	(cons #x20 (number->leb-u8-list (cadr expr))))
        ((eq? tag 'call)
 	(append (encode-exprs (cddr expr))
 		(cons #x10 (number->leb-u8-list (cadr expr)))))
