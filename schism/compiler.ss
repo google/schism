@@ -12,18 +12,35 @@
   ;; constant-tag is used for implementation constants, such as #f, #t and ()
   (define (constant-tag) 1)
   (define (constant-false) (tag-constant 0 (constant-tag)))
-  (define (constant-true) (tag-constant 1 (constant-tag))) 
+  (define (constant-true) (tag-constant 1 (constant-tag)))
+
+  (define (pair-tag) 2)
+
+  (define (allocation-pointer) 0)
+  (define (word-size) 4)
   
   ;; ====================== ;;
   ;; Helpers, etc.          ;;
   ;; ====================== ;;
 
   (define (index-of-helper x ls index)
-    (if (eq? x (car ls))
-	index
-	(index-of-helper x (cdr ls) (+ 1 index))))
+    (if (pair? ls)
+	(if (eq? x (car ls))
+	    index
+	    (index-of-helper x (cdr ls) (+ 1 index)))
+	(begin
+	  (display x) (newline)
+	  (error 'index-of "Could not find item"))))
   (define (index-of x ls)
     (index-of-helper x ls 0))
+
+  (define (primitives)
+    `((define (cons a d)
+	(init-pair (%alloc ,(pair-tag) 2) a d))
+      (define (init-pair p a d)
+	(set-car! p a)
+	(set-cdr! p d)
+	p)))
 
   ;; ====================== ;;
   ;; Parsing                ;;
@@ -48,6 +65,12 @@
 		(c (caddr expr))
 		(a (cadddr expr)))
 	    (list 'if (parse-pred t) (parse-expr c) (parse-expr a))))
+	 ((or (eq? op 'set-car!) (eq? op 'set-cdr!))
+	  (let ((p (parse-expr (cadr expr)))
+		(x (parse-expr (caddr expr))))
+	    (list op p x)))
+	 ((eq? op '%alloc)
+	  (list '%alloc (parse-expr (cadr expr)) (parse-expr (caddr expr))))
 	 (else
 	  ;; this is a function call
 	  (cons 'call (cons (car expr) (parse-exprs (cdr expr))))))))
@@ -92,7 +115,7 @@
     ;; For now just assume it's correctly formed. We can do error checking later.
     (let ((body (cddr lib))) ;; skip the library and name
       (let ((exports (cdar body)) ;; names of the functions exported
-	    (functions (parse-functions (cddr body))))
+	    (functions (parse-functions (append (cddr body) (primitives)))))
 	(cons exports functions))))
 
   (define (args->types args)
@@ -134,6 +157,14 @@
 		(apply-representation-pred t)
 		(apply-representation-expr c)
 		(apply-representation-expr a))))
+       ((or (eq? tag 'set-car!) (eq? tag 'set-cdr!))
+	(let ((p (apply-representation-expr (cadr expr)))
+	      (x (apply-representation-expr (caddr expr))))
+	  (list tag p x)))
+       ((eq? tag '%alloc)
+	(let ((t (apply-representation-expr (cadr expr)))
+	      (l (apply-representation-expr (caddr expr))))
+	  (list tag t l)))
        (else
 	(display expr) (newline)
 	(error 'apply-representation-expr "Unrecognized expr")))))
@@ -171,6 +202,27 @@
 	      (c (caddr expr))
 	      (a (cadddr expr)))
 	  (list 'if (compile-pred t env) (compile-expr c env) (compile-expr a env))))
+       ((eq? tag 'set-car!)
+	(let ((p (compile-expr (cadr expr) env))
+	      (x (compile-expr (caddr expr) env)))
+	  `(i32.store (offset 0) (i32.and ,p (i32.const -8)) ,x)))
+       ((eq? tag 'set-cdr!)
+	(let ((p (compile-expr (cadr expr) env))
+	      (x (compile-expr (caddr expr) env)))
+	  `(i32.store (offset ,(word-size)) (i32.and ,p (i32.const -8)) ,x)))
+       ((eq? tag '%alloc)
+	(let ((tag (compile-expr (cadr expr) env))
+	      (len (compile-expr (caddr expr) env))) ;; length is in words (i.e. 32-bit)
+	  ;; We have an unstate assumption that we always allocate at least 8 bytes.
+	  `(begin
+	     (i32.load (offset 0) (i32.const ,(allocation-pointer)))
+	     (i32.store (offset 0)
+			(i32.const ,(allocation-pointer))
+			(i32.add (i32.load (offset 0) (i32.const ,(allocation-pointer)))
+				 (i32.mul (i32.const ,(word-size)) ,len)))
+	     (i32.or ,tag)
+	     ;; Add one word to save room for the allocation pointer
+	     (i32.add (i32.const ,(word-size))))))
        (else (display expr) (newline) (error 'compile-expr "Unrecognized expression")))))
   (define (compile-pred expr env)
     (let ((op (car expr)))
@@ -235,6 +287,12 @@
 	'()
 	(cons i (number-list (cdr ls) (+ 1 i)))))
 
+  (define (wasm-binop? op)
+    (or (eq? op 'i32.and)
+	(eq? op 'i32.add)
+	(eq? op 'i32.mul)
+	(eq? op 'i32.or)))
+  
   (define (resolve-calls-exprs exprs env)
     (if (null? exprs)
 	'()
@@ -245,13 +303,26 @@
        ((eq? tag 'i32.const) expr)
        ((eq? tag 'get-local) expr)
        ((eq? tag 'begin) (cons 'begin (resolve-calls-exprs (cdr expr) env)))
-       ((eq? tag 'call) (cons 'call (cons (index-of (cadr expr) env) (cddr expr))))
+       ((eq? tag 'call) (cons 'call (cons (index-of (cadr expr) env)
+					  (resolve-calls-exprs (cddr expr) env))))
        ((eq? tag 'if)
 	;; TODO: support calls in the predicate
 	(let ((t (cadr expr))
 	      (c (caddr expr))
 	      (a (cadddr expr)))
 	  (list 'if t (resolve-calls-expr c env) (resolve-calls-expr a env))))
+       ((eq? tag 'i32.store)
+	(let ((offset (cadr expr))
+	      (index (resolve-calls-expr (caddr expr) env))
+	      (value (resolve-calls-expr (cadddr expr) env)))
+	  (list 'i32.store offset index value)))
+       ((eq? tag 'i32.load)
+	(let ((offset (cadr expr))
+	      (index (resolve-calls-expr (caddr expr) env)))
+	  (list 'i32.load offset index)))
+       ((wasm-binop? tag)
+	(let ((args (resolve-calls-exprs (cdr expr) env)))
+	  (cons tag args)))
        (else
 	(display expr) (newline)
 	(error 'resolve-calls-expr "Unrecognized expression")))))
@@ -268,7 +339,7 @@
   
   (define (number->leb-u8-list n)
     (if (and (< n #x80) (> n (- #x80)))
-	(list n)
+	(list (bitwise-and n #x7f))
 	(cons (bitwise-ior #x80 (bitwise-bit-field n 0 7))
 	      (number->leb-u8-list (bitwise-arithmetic-shift-right n 7)))))
 
@@ -341,6 +412,9 @@
     (if (null? exprs)
 	'()
 	(append (encode-expr (car exprs)) (encode-exprs (cdr exprs)))))
+
+  (define (encode-binop op expr)
+    (append (encode-exprs (cdr expr)) (list op)))
   
   (define (encode-expr expr)
     (let ((tag (car expr)))
@@ -365,6 +439,29 @@
 		  (list #x04 #x7f) (encode-expr c)
 		  (list #x05) (encode-expr a)
 		  (list #x0b))))
+       ((eq? tag 'i32.store)
+	(let ((align 0)
+	      (offset (cadadr expr))
+	      (index (encode-expr (caddr expr)))
+	      (value (encode-expr (cadddr expr))))
+	  (append index value
+		  (list #x36 #x0) ;;always use 0 alignment
+		  (number->leb-u8-list offset))))
+       ((eq? tag 'i32.load)
+	(let ((align 0)
+	      (offset (cadadr expr))
+	      (index (encode-expr (caddr expr))))
+	  (append index
+		  (list #x28 #x0) ;;always use 0 alignment
+		  (number->leb-u8-list offset))))
+       ((eq? tag 'i32.add)
+	(encode-binop #x6a expr))
+       ((eq? tag 'i32.mul)
+	(encode-binop #x6c expr))
+       ((eq? tag 'i32.and)
+	(encode-binop #x71 expr))
+       ((eq? tag 'i32.or)
+	(encode-binop #x72 expr))
        (else
 	(display expr) (newline)
 	(error 'encode-expr "Unrecognized expr")))))
@@ -382,6 +479,12 @@
   
   (define (wasm-code-section codes)
     (make-section 10 (make-vec (length codes) (encode-codes codes))))
+
+  (define (wasm-memory-section)
+    ;; For now we hardcode a memory
+    (make-section 5 (make-vec 1
+			      ;; Memory with 1 page and no maximum
+			      (list 0 1))))
   
   ;; Takes a library and returns a bytevector of the corresponding Wasm module
   ;; bytes
@@ -399,6 +502,7 @@
 	  (let ((module (append (wasm-header)
 				(wasm-type-section types)
 				(wasm-function-section (number-list functions 0))
+				(wasm-memory-section)
 				(wasm-export-section exports)
 				(wasm-code-section functions))))
 	    (u8-list->bytevector module)))))))
