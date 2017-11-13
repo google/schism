@@ -40,7 +40,11 @@
       (define (init-pair p a d)
 	(set-car! p a)
 	(set-cdr! p d)
-	p)))
+	p)
+      (define (eq? a b)
+	(if (eq? a b)
+	    #t
+	    #f))))
 
   ;; ====================== ;;
   ;; Parsing                ;;
@@ -85,6 +89,8 @@
 	  (cond
 	   ((eq? op 'zero?)
 	    (list 'zero? (parse-expr (cadr expr))))
+	   ((eq? op 'eq?)
+	    (list 'eq? (parse-expr (cadr expr)) (parse-expr (caddr expr))))
 	   (else
 	    (display expr) (newline)
 	    (error 'parse-pred "Unrecognized predicate")))))
@@ -176,6 +182,9 @@
     (let ((tag (car pred)))
       (cond
        ((eq? tag 'zero?) (list 'zero? (apply-representation-expr (cadr pred))))
+       ((eq? tag 'eq?) (list 'eq?
+			       (apply-representation-expr (cadr pred))
+			       (apply-representation-expr (caddr pred))))
        ((eq? tag 'bool) pred)
        (else
 	(display pred) (newline)
@@ -229,6 +238,10 @@
       (cond
        ((eq? op 'zero?)
 	(list 'i32.eqz (compile-expr (cadr expr) env)))
+       ((eq? op 'eq?)
+	(list 'i32.eq
+	      (compile-expr (cadr expr) env)
+	      (compile-expr (caddr expr) env)))
        ((eq? op 'bool)
        	;; Since we're in pred context, bools get translated into
 	;; things that go directly into if.
@@ -425,6 +438,8 @@
 	(cons #x41 (number->leb-u8-list (cadr expr))))
        ((eq? tag 'i32.eqz)
 	(append (encode-expr (cadr expr)) (list #x45)))
+       ((eq? tag 'i32.eq)
+	(encode-binop #x46 expr))       
        ((eq? tag 'get-local)
 	(cons #x20 (number->leb-u8-list (cadr expr))))
        ((eq? tag 'call)
