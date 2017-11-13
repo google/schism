@@ -13,6 +13,7 @@
   (define (constant-tag) 1)
   (define (constant-false) (tag-constant 0 (constant-tag)))
   (define (constant-true) (tag-constant 1 (constant-tag)))
+  (define (constant-null) (tag-constant 2 (constant-tag)))
 
   (define (pair-tag) 2)
 
@@ -49,13 +50,14 @@
   ;; ====================== ;;
   ;; Parsing                ;;
   ;; ====================== ;;
-
+  
   (define (parse-exprs exprs)
     (if (null? exprs)
 	'()
 	(cons (parse-expr (car exprs)) (parse-exprs (cdr exprs)))))
   (define (parse-expr expr)
     (cond
+     ((null? expr) '(null))
      ((number? expr)
       (list 'number expr))
      ((boolean? expr) (list 'bool expr))
@@ -64,6 +66,8 @@
      ((pair? expr)
       (let ((op (car expr)))
 	(cond
+	 ((eq? op 'quote)
+	  (parse-expr (expand-quote (cadr expr))))
 	 ((eq? op 'if)
 	  (let ((t (cadr expr))
 		(c (caddr expr))
@@ -124,6 +128,16 @@
 	    (functions (parse-functions (append (cddr body) (primitives)))))
 	(cons exports functions))))
 
+  (define (expand-quote expr)
+    (cond
+     ;; Literals self-evaluate
+     ((or (number? expr) (boolean? expr) (null? expr))
+      expr)
+     ((pair? expr)
+      (list 'cons (expand-quote (car expr)) (expand-quote (cdr expr))))
+     (else
+      (error 'expand-quote "Invalid datum" expr))))
+  
   (define (args->types args)
     (if (null? args)
 	'()
@@ -145,6 +159,8 @@
   (define (apply-representation-expr expr)
     (let ((tag (car expr)))
       (cond
+       ((eq? tag 'null)
+	(list 'ptr (constant-null)))
        ((eq? tag 'bool)
 	(list 'ptr (if (cadr expr)
 		       (constant-true)
