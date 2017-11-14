@@ -36,6 +36,32 @@ until it is self-hosted. Here are some of the current restrictions:
 As more features are supported by the compiler, we will remove these
 restrictions.
 
+## Current Status and Next Steps
+
+Many of the hard things needed for self-hosting are in place. These include:
+
+* Top-level function definitions
+* Value types (i.e. numbers, pairs, or things that go in a local or on
+  the stack)
+* Pairs, basic support for heap-allocation
+* Conditionals, basic comparison operators
+
+The main things that are missing, that I think we'll need
+
+* Symbols
+* A reader
+* Runtime integration
+
+Runtime integration is probably a good thing to tackle next. We'll
+start by hardcoding a couple of import functions (like read-byte,
+write-byte). Then we'll provide JS and Scheme implementations of
+these, as well as plumbing to allow us to run both version.
+
+This will leave is in a good place to write a reader that will work in
+Wasm or Chez Scheme.
+
+The goal is to fit the compiler in under 1000 lines of code.
+
 ## Testing
 
 We currently use a very simple testing protocol. The `test/` directory
