@@ -3,10 +3,10 @@
   (import (rnrs))
 
   (define (tag-size) 3)
-  
+
   (define (tag-constant value tag)
     (bitwise-ior (bitwise-arithmetic-shift-left value (tag-size)) tag))
-  
+
   ;; fixnums are 0 so most arithmetic doesn't require shifting
   (define (fixnum-tag) 0)
   ;; constant-tag is used for implementation constants, such as #f, #t and ()
@@ -19,7 +19,7 @@
 
   (define (allocation-pointer) 0)
   (define (word-size) 4)
-  
+
   ;; ====================== ;;
   ;; Helpers, etc.          ;;
   ;; ====================== ;;
@@ -50,7 +50,7 @@
   ;; ====================== ;;
   ;; Parsing                ;;
   ;; ====================== ;;
-  
+
   (define (parse-exprs exprs)
     (if (null? exprs)
 	'()
@@ -77,6 +77,10 @@
 	  (let ((p (parse-expr (cadr expr)))
 		(x (parse-expr (caddr expr))))
 	    (list op p x)))
+	 ((eq? op '+)
+	  (let ((a (parse-expr (cadr expr)))
+		(b (parse-expr (caddr expr))))
+	    (list op a b)))
 	 ((eq? op '%alloc)
 	  (list '%alloc (parse-expr (cadr expr)) (parse-expr (caddr expr))))
 	 (else
@@ -101,7 +105,7 @@
      (else
       (display expr) (newline)
       (error 'parse-pred "Unrecognized predicate"))))
-	  
+
   (define (parse-body* body*)
     (if (null? body*)
 	'()
@@ -109,7 +113,7 @@
   (define (parse-body body)
     ;; expr ... -> (begin expr ...)
     (cons 'begin (parse-body* body)))
-  
+
   (define (parse-function function)
     (let ((name (caadr function))
 	  (args (cdadr function))
@@ -120,7 +124,7 @@
     (if (null? functions)
 	'()
 	(cons (parse-function (car functions)) (parse-functions (cdr functions)))))
-  
+
   (define (parse-library lib)
     ;; For now just assume it's correctly formed. We can do error checking later.
     (let ((body (cddr lib))) ;; skip the library and name
@@ -137,13 +141,13 @@
       (list 'cons (expand-quote (car expr)) (expand-quote (cdr expr))))
      (else
       (error 'expand-quote "Invalid datum" expr))))
-  
+
   (define (args->types args)
     (if (null? args)
 	'()
 	(cons 'i32 (args->types (cdr args)))))
 
-  
+
   ;; ====================== ;;
   ;; Apply representation   ;;
   ;; ====================== ;;
@@ -183,6 +187,10 @@
 	(let ((p (apply-representation-expr (cadr expr)))
 	      (x (apply-representation-expr (caddr expr))))
 	  (list tag p x)))
+       ((eq? tag '+)
+	(let ((a (apply-representation-expr (cadr expr)))
+	      (b (apply-representation-expr (caddr expr))))
+	  (list tag a b)))
        ((eq? tag '%alloc)
 	(let ((t (apply-representation-expr (cadr expr)))
 	      (l (apply-representation-expr (caddr expr))))
@@ -205,7 +213,7 @@
        (else
 	(display pred) (newline)
 	(error 'apply-representation-pred "Unrecognized pred")))))
-	   
+
   ;; ====================== ;;
   ;; Compile (make wasm)    ;;
   ;; ====================== ;;
@@ -235,6 +243,10 @@
 	(let ((p (compile-expr (cadr expr) env))
 	      (x (compile-expr (caddr expr) env)))
 	  `(i32.store (offset ,(word-size)) (i32.and ,p (i32.const -8)) ,x)))
+       ((eq? tag '+)
+	(let ((a (compile-expr (cadr expr) env))
+	      (b (compile-expr (caddr expr) env)))
+	  `(i32.add ,a ,b)))
        ((eq? tag '%alloc)
 	(let ((tag (compile-expr (cadr expr) env))
 	      (len (compile-expr (caddr expr) env))) ;; length is in words (i.e. 32-bit)
@@ -267,7 +279,7 @@
        (else
 	(display expr) (newline)
 	(error 'compile-pred "Unrecognized predicate")))))
-  
+
   (define (compile-function fn)
     (let ((args (cdar fn))) ;; basically just a list of the arguments
       (let ((body (compile-expr (cadr fn) args)))
@@ -289,7 +301,7 @@
     (if (null? fns)
 	'()
 	(cons (function->name (car fns)) (functions->names (cdr fns)))))
-  
+
   (define (compile-functions fn*)
     (if (null? fn*)
 	'()
@@ -303,7 +315,7 @@
 	  (if (or (pair? ex) (not (eq? ex name)))
 	      (cons ex rest)
 	      (cons (list 'fn index (symbol->string name)) rest)))))
-  
+
   (define (build-exports exports functions index)
     (if (null? functions)
 	exports
@@ -321,7 +333,7 @@
 	(eq? op 'i32.add)
 	(eq? op 'i32.mul)
 	(eq? op 'i32.or)))
-  
+
   (define (resolve-calls-exprs exprs env)
     (if (null? exprs)
 	'()
@@ -361,11 +373,11 @@
     (if (null? functions)
 	'()
 	(cons (resolve-calls-fn (car functions) env) (resolve-calls (cdr functions) env))))
-  
+
   ;; ====================== ;;
   ;; Wasm Binary Generation ;;
   ;; ====================== ;;
-  
+
   (define (number->leb-u8-list n)
     (if (and (< n #x80) (> n (- #x80)))
 	(list (bitwise-and n #x7f))
@@ -376,17 +388,17 @@
     (if (null? chars)
 	'()
 	(cons (char->integer (car chars)) (encode-chars (cdr chars)))))
-  
+
   (define (encode-string s)
     (let ((chars (string->list s)))
       (make-vec (length chars) (encode-chars chars))))
-  
+
   (define (wasm-header)
     (list #x00 #x61 #x73 #x6d #x01 #x00 #x00 #x00))
 
   (define (make-vec length contents)
     (append (number->leb-u8-list length) contents))
-  
+
   ;; id is the number, contents is a list of bytes
   (define (make-section id contents)
     (cons id (make-vec (length contents) contents)))
@@ -398,7 +410,7 @@
 
   (define (encode-type-vec types)
     (make-vec (length types) (encode-type-vec-contents types)))
-  
+
   (define (encode-type type)
     (cond
      ((eq? type 'i32) '(#x7f))
@@ -409,7 +421,7 @@
      ((and (pair? type) (eq? (car type) 'fn))
       (cons #x60 (append (encode-type-vec (cadr type)) (encode-type-vec (caddr type)))))
      (else (display type) (newline) (error 'encode-type "Unrecognized type"))))
-  
+
   (define (wasm-type-section types)
     (make-section 1 (encode-type-vec types)))
 
@@ -420,7 +432,7 @@
 
   (define (encode-u32-vec nums)
     (make-vec (length nums) (encode-u32-vec-contents nums)))
-  
+
   (define (wasm-function-section function-type-ids)
     (make-section 3 (encode-u32-vec function-type-ids)))
 
@@ -428,15 +440,15 @@
     (cond
      ((eq? (car export) 'fn)
       (append (encode-string (caddr export)) (cons #x00 (number->leb-u8-list (cadr export)))))))
-  
+
   (define (encode-export-contents exports)
     (if (null? exports)
 	'()
 	(append (encode-export (car exports)) (encode-export-contents (cdr exports)))))
-  
+
   (define (wasm-export-section exports)
     (make-section 7 (make-vec (length exports) (encode-export-contents exports))))
-    
+
   (define (encode-exprs exprs)
     (if (null? exprs)
 	'()
@@ -444,7 +456,7 @@
 
   (define (encode-binop op expr)
     (append (encode-exprs (cdr expr)) (list op)))
-  
+
   (define (encode-expr expr)
     (let ((tag (car expr)))
       (cond
@@ -455,7 +467,7 @@
        ((eq? tag 'i32.eqz)
 	(append (encode-expr (cadr expr)) (list #x45)))
        ((eq? tag 'i32.eq)
-	(encode-binop #x46 expr))       
+	(encode-binop #x46 expr))
        ((eq? tag 'get-local)
 	(cons #x20 (number->leb-u8-list (cadr expr))))
        ((eq? tag 'call)
@@ -496,7 +508,7 @@
        (else
 	(display expr) (newline)
 	(error 'encode-expr "Unrecognized expr")))))
-  
+
   (define (encode-code locals body)
     (let ((contents (append (encode-type-vec locals)
 			    (encode-expr body)
@@ -507,7 +519,7 @@
     (if (null? codes)
 	'()
 	(append (encode-code (caar codes) (cadar codes)) (encode-codes (cdr codes)))))
-  
+
   (define (wasm-code-section codes)
     (make-section 10 (make-vec (length codes) (encode-codes codes))))
 
@@ -516,7 +528,7 @@
     (make-section 5 (make-vec 1
 			      ;; Memory with 1 page and no maximum
 			      (list 0 1))))
-  
+
   ;; Takes a library and returns a bytevector of the corresponding Wasm module
   ;; bytes
   (define (compile-library library)
