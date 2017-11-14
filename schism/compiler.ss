@@ -24,6 +24,10 @@
   ;; Helpers, etc.          ;;
   ;; ====================== ;;
 
+  (define (trace-value x)
+    (display x) (newline)
+    x)
+
   (define (index-of-helper x ls index)
     (if (pair? ls)
 	(if (eq? x (car ls))
@@ -42,10 +46,24 @@
 	(set-car! p a)
 	(set-cdr! p d)
 	p)
+      (define (car p)
+	(read-ptr p 0))
+      (define (cdr p)
+	(read-ptr p ,(word-size)))
+      (define (read-ptr p offset)
+	(%read-mem (bitwise-and p -8) offset))
       (define (eq? a b)
 	(if (eq? a b)
 	    #t
-	    #f))))
+	    #f))
+      (define (zero? n)
+	(eq? n 0))
+      (define (null? x)
+	(eq? x '()))))
+
+  (define (intrinsic? x)
+    (or (eq? x '%alloc) (eq? x '%read-mem) (eq? x '%store-mem) (eq? x 'bitwise-and)
+	(eq? x 'bitwise-not)))
 
   ;; ====================== ;;
   ;; Parsing                ;;
@@ -81,8 +99,8 @@
 	  (let ((a (parse-expr (cadr expr)))
 		(b (parse-expr (caddr expr))))
 	    (list op a b)))
-	 ((eq? op '%alloc)
-	  (list '%alloc (parse-expr (cadr expr)) (parse-expr (caddr expr))))
+	 ((intrinsic? op)
+	  (cons op (parse-exprs (cdr expr))))
 	 (else
 	  ;; this is a function call
 	  (cons 'call (cons (car expr) (parse-exprs (cdr expr))))))))
@@ -93,18 +111,14 @@
     (cond
      ((boolean? expr) (list 'bool expr))
      ((pair? expr)
-	(let ((op (car expr)))
-	  (cond
-	   ((eq? op 'zero?)
-	    (list 'zero? (parse-expr (cadr expr))))
-	   ((eq? op 'eq?)
-	    (list 'eq? (parse-expr (cadr expr)) (parse-expr (caddr expr))))
-	   (else
-	    (display expr) (newline)
-	    (error 'parse-pred "Unrecognized predicate")))))
+      (let ((op (car expr)))
+	(cond
+	 ((eq? op 'eq?)
+	  (list 'eq? (parse-expr (cadr expr)) (parse-expr (caddr expr))))
+	 (else
+	  (list 'neq? (parse-expr expr) (parse-expr #f))))))
      (else
-      (display expr) (newline)
-      (error 'parse-pred "Unrecognized predicate"))))
+      (list 'neq? (parse-expr expr) (parse-expr #f)))))
 
   (define (parse-body* body*)
     (if (null? body*)
@@ -191,10 +205,8 @@
 	(let ((a (apply-representation-expr (cadr expr)))
 	      (b (apply-representation-expr (caddr expr))))
 	  (list tag a b)))
-       ((eq? tag '%alloc)
-	(let ((t (apply-representation-expr (cadr expr)))
-	      (l (apply-representation-expr (caddr expr))))
-	  (list tag t l)))
+       ((intrinsic? tag)
+	(cons tag (apply-representation-expr* (cdr expr))))
        (else
 	(display expr) (newline)
 	(error 'apply-representation-expr "Unrecognized expr")))))
@@ -207,6 +219,9 @@
       (cond
        ((eq? tag 'zero?) (list 'zero? (apply-representation-expr (cadr pred))))
        ((eq? tag 'eq?) (list 'eq?
+			       (apply-representation-expr (cadr pred))
+			       (apply-representation-expr (caddr pred))))
+       ((eq? tag 'neq?) (list 'neq?
 			       (apply-representation-expr (cadr pred))
 			       (apply-representation-expr (caddr pred))))
        ((eq? tag 'bool) pred)
@@ -260,6 +275,13 @@
 	     (i32.or ,tag)
 	     ;; Add one word to save room for the allocation pointer
 	     (i32.add (i32.const ,(word-size))))))
+       ((eq? tag '%read-mem)
+	`(i32.load (offset 0) (i32.add ,(compile-expr (cadr expr) env)
+				       ,(compile-expr (caddr expr) env))))
+       ((eq? tag 'bitwise-and)
+	(cons 'i32.and (compile-exprs (cdr expr) env)))
+       ((eq? tag 'bitwise-not)
+	(cons 'i32.not (compile-exprs (cdr expr) env)))
        (else (display expr) (newline) (error 'compile-expr "Unrecognized expression")))))
   (define (compile-pred expr env)
     (let ((op (car expr)))
@@ -268,6 +290,10 @@
 	(list 'i32.eqz (compile-expr (cadr expr) env)))
        ((eq? op 'eq?)
 	(list 'i32.eq
+	      (compile-expr (cadr expr) env)
+	      (compile-expr (caddr expr) env)))
+       ((eq? op 'neq?)
+	(list 'i32.ne
 	      (compile-expr (cadr expr) env)
 	      (compile-expr (caddr expr) env)))
        ((eq? op 'bool)
@@ -328,11 +354,9 @@
 	'()
 	(cons i (number-list (cdr ls) (+ 1 i)))))
 
-  (define (wasm-binop? op)
-    (or (eq? op 'i32.and)
-	(eq? op 'i32.add)
-	(eq? op 'i32.mul)
-	(eq? op 'i32.or)))
+  (define (wasm-simple-op? op)
+    (or (eq? op 'i32.and) (eq? op 'i32.add) (eq? op 'i32.mul) (eq? op 'i32.or)
+	(eq? op 'i32.eq) (eq? op 'i32.ne) (eq? op 'i32.not)))
 
   (define (resolve-calls-exprs exprs env)
     (if (null? exprs)
@@ -351,7 +375,10 @@
 	(let ((t (cadr expr))
 	      (c (caddr expr))
 	      (a (cadddr expr)))
-	  (list 'if t (resolve-calls-expr c env) (resolve-calls-expr a env))))
+	  (list 'if
+		(resolve-calls-expr t env)
+		(resolve-calls-expr c env)
+		(resolve-calls-expr a env))))
        ((eq? tag 'i32.store)
 	(let ((offset (cadr expr))
 	      (index (resolve-calls-expr (caddr expr) env))
@@ -361,7 +388,7 @@
 	(let ((offset (cadr expr))
 	      (index (resolve-calls-expr (caddr expr) env)))
 	  (list 'i32.load offset index)))
-       ((wasm-binop? tag)
+       ((wasm-simple-op? tag)
 	(let ((args (resolve-calls-exprs (cdr expr) env)))
 	  (cons tag args)))
        (else
@@ -454,7 +481,7 @@
 	'()
 	(append (encode-expr (car exprs)) (encode-exprs (cdr exprs)))))
 
-  (define (encode-binop op expr)
+  (define (encode-simple-op op expr)
     (append (encode-exprs (cdr expr)) (list op)))
 
   (define (encode-expr expr)
@@ -467,7 +494,9 @@
        ((eq? tag 'i32.eqz)
 	(append (encode-expr (cadr expr)) (list #x45)))
        ((eq? tag 'i32.eq)
-	(encode-binop #x46 expr))
+	(encode-simple-op #x46 expr))
+       ((eq? tag 'i32.ne)
+	(encode-simple-op #x47 expr))
        ((eq? tag 'get-local)
 	(cons #x20 (number->leb-u8-list (cadr expr))))
        ((eq? tag 'call)
@@ -498,13 +527,15 @@
 		  (list #x28 #x0) ;;always use 0 alignment
 		  (number->leb-u8-list offset))))
        ((eq? tag 'i32.add)
-	(encode-binop #x6a expr))
+	(encode-simple-op #x6a expr))
        ((eq? tag 'i32.mul)
-	(encode-binop #x6c expr))
+	(encode-simple-op #x6c expr))
        ((eq? tag 'i32.and)
-	(encode-binop #x71 expr))
+	(encode-simple-op #x71 expr))
+       ((eq? tag 'i32.not)
+	(encode-simple-op #x71 expr))
        ((eq? tag 'i32.or)
-	(encode-binop #x72 expr))
+	(encode-simple-op #x72 expr))
        (else
 	(display expr) (newline)
 	(error 'encode-expr "Unrecognized expr")))))
