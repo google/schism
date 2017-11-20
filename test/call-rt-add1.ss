@@ -2,7 +2,7 @@
     (trivial)
   (export do-test)
   (import (rnrs)
-		  ;; This is actually ignored, but we might as well do it propery.
+		  ;; This is actually ignored, but we might as well do it properly.
 		  (rt))
 
   (define (do-test)
