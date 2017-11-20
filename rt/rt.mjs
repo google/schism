@@ -62,5 +62,11 @@ export const rt = {
       tag_constant(input_port_data[input_index++], TAGS.char);
     }
     return CONSTANTS.eof;
+  },
+  'peek-char': function() {
+    if (input_index < input_port_data.length) {
+      tag_constant(input_port_data[input_index], TAGS.char);
+    }
+    return CONSTANTS.eof;
   }
 };

@@ -44,6 +44,7 @@
   (define (primitives)
     `((%wasm-import "rt" (rt-add1 n))
       (%wasm-import "rt" (read-char))
+      (%wasm-import "rt" (peek-char))
       (define (cons a d)
 		(init-pair (%alloc ,(pair-tag) 2) a d))
       (define (init-pair p a d)
@@ -56,12 +57,31 @@
 		(read-ptr p ,(word-size)))
       (define (read-ptr p offset)
 		(%read-mem (bitwise-and p -8) offset))
-      (define (eq? a b)
-		(if (eq? a b)
-			#t
-			#f))
       (define (char->integer c)
         (bitwise-and c -8)) ;; TODO: check tag
+      (define (char-between c c1 c2) ;; inclusive
+        (if (char-ci<? c c1)
+            #f
+            (if (char-ci<? c c2)
+                #t
+                (if (eq? c c2) #t #f))))
+      (define (char-numeric? c)
+        (char-between c #\0 #\9))
+      (define (char-ci<? c1 c2)
+        (< (char->integer c1) (char->integer c2)))
+      (define (< a b)
+        (if (< a b) #t #f))
+      (define (read)
+        (if (char-numeric? (peek-char))
+            (read-number 0)
+            #f))
+      (define (read-number acc)
+        (if (char-numeric? (peek-char))
+            (read-number (+ (* acc 10) (- (char->integer (read-char))
+                                          (char->integer #\0))))
+            acc))
+      (define (eq? a b)
+		(if (eq? a b) #t #f))
       (define (zero? n)
 		(eq? n 0))
       (define (null? x)
@@ -69,7 +89,8 @@
 
   (define (intrinsic? x)
     (or (eq? x '%alloc) (eq? x '%read-mem) (eq? x '%store-mem) (eq? x 'bitwise-and)
-        (eq? x 'bitwise-not)))
+        (eq? x 'bitwise-not) (eq? x 'eof-object) (eq? x '+) (eq? x '*)
+        (eq? x '-) (eq? x 'set-car!) (eq? x 'set-cdr!)))
 
   ;; ====================== ;;
   ;; Parsing                ;;
@@ -99,14 +120,6 @@
                 (c (caddr expr))
                 (a (cadddr expr)))
             (list 'if (parse-pred t) (parse-expr c) (parse-expr a))))
-         ((or (eq? op 'set-car!) (eq? op 'set-cdr!))
-          (let ((p (parse-expr (cadr expr)))
-                (x (parse-expr (caddr expr))))
-            (list op p x)))
-         ((eq? op '+)
-          (let ((a (parse-expr (cadr expr)))
-                (b (parse-expr (caddr expr))))
-            (list op a b)))
          ((intrinsic? op)
           (cons op (parse-exprs (cdr expr))))
          (else
@@ -123,6 +136,8 @@
         (cond
          ((eq? op 'eq?)
           (list 'eq? (parse-expr (cadr expr)) (parse-expr (caddr expr))))
+         ((eq? op '<)
+          (list '< (parse-expr (cadr expr)) (parse-expr (caddr expr))))
          (else
           (list 'neq? (parse-expr expr) (parse-expr #f))))))
      (else
@@ -207,6 +222,7 @@
         (cons 'begin (apply-representation-expr* (cdr expr))))
        ((eq? tag 'var) expr)
        ((eq? tag 'number) expr)
+       ((eq? tag 'eof-object) (list 'ptr (constant-eof)))
        ((eq? tag 'call)
         (cons 'call (cons (cadr expr) (apply-representation-expr* (cddr expr)))))
        ((eq? tag 'if)
@@ -217,14 +233,6 @@
                 (apply-representation-pred t)
                 (apply-representation-expr c)
                 (apply-representation-expr a))))
-       ((or (eq? tag 'set-car!) (eq? tag 'set-cdr!))
-        (let ((p (apply-representation-expr (cadr expr)))
-              (x (apply-representation-expr (caddr expr))))
-          (list tag p x)))
-       ((eq? tag '+)
-        (let ((a (apply-representation-expr (cadr expr)))
-              (b (apply-representation-expr (caddr expr))))
-          (list tag a b)))
        ((intrinsic? tag)
         (cons tag (apply-representation-expr* (cdr expr))))
        (else
@@ -241,6 +249,9 @@
        ((eq? tag 'eq?) (list 'eq?
                              (apply-representation-expr (cadr pred))
                              (apply-representation-expr (caddr pred))))
+       ((eq? tag '<) (list '<
+                           (apply-representation-expr (cadr pred))
+                           (apply-representation-expr (caddr pred))))
        ((eq? tag 'neq?) (list 'neq?
                               (apply-representation-expr (cadr pred))
                               (apply-representation-expr (caddr pred))))
@@ -282,6 +293,16 @@
         (let ((a (compile-expr (cadr expr) env))
               (b (compile-expr (caddr expr) env)))
           `(i32.add ,a ,b)))
+       ((eq? tag '-)
+        (let ((a (compile-expr (cadr expr) env))
+              (b (compile-expr (caddr expr) env)))
+          ;; Subtraction might borrow into the tag, so mask off the low bits
+          `(i32.and (i32.sub ,a ,b) (i32.const -8))))
+       ((eq? tag '*)
+        (let ((a (compile-expr (cadr expr) env))
+              (b (compile-expr (caddr expr) env)))
+          ;; Shift only one of them and we don't have to shift back when we're done.
+          `(i32.mul (i32.shr_s ,a (i32.const ,(tag-size))) ,b)))
        ((eq? tag '%alloc)
         (let ((tag (compile-expr (cadr expr) env))
               (len (compile-expr (caddr expr) env))) ;; length is in words (i.e. 32-bit)
@@ -314,6 +335,10 @@
               (compile-expr (caddr expr) env)))
        ((eq? op 'neq?)
         (list 'i32.ne
+              (compile-expr (cadr expr) env)
+              (compile-expr (caddr expr) env)))
+       ((eq? op '<)
+        (list 'i32.lt_s
               (compile-expr (cadr expr) env)
               (compile-expr (caddr expr) env)))
        ((eq? op 'bool)
@@ -383,8 +408,9 @@
         (cons i (number-list (cdr ls) (+ 1 i)))))
 
   (define (wasm-simple-op? op)
-    (or (eq? op 'i32.and) (eq? op 'i32.add) (eq? op 'i32.mul) (eq? op 'i32.or)
-        (eq? op 'i32.eq) (eq? op 'i32.ne) (eq? op 'i32.not)))
+    (or (eq? op 'i32.and) (eq? op 'i32.add) (eq? op 'i32.sub) (eq? op 'i32.mul)
+        (eq? op 'i32.or) (eq? op 'i32.eq) (eq? op 'i32.ne) (eq? op 'i32.not)
+        (eq? op 'i32.lt_s) (eq? op 'i32.shr_s)))
 
   (define (resolve-calls-exprs exprs env)
     (if (null? exprs)
@@ -550,6 +576,8 @@
         (encode-simple-op #x46 expr))
        ((eq? tag 'i32.ne)
         (encode-simple-op #x47 expr))
+       ((eq? tag 'i32.lt_s)
+        (encode-simple-op #x48 expr))
        ((eq? tag 'get-local)
         (cons #x20 (number->leb-u8-list (cadr expr))))
        ((eq? tag 'call)
@@ -581,6 +609,8 @@
                   (number->leb-u8-list offset))))
        ((eq? tag 'i32.add)
         (encode-simple-op #x6a expr))
+       ((eq? tag 'i32.sub)
+        (encode-simple-op #x6b expr))
        ((eq? tag 'i32.mul)
         (encode-simple-op #x6c expr))
        ((eq? tag 'i32.and)
@@ -589,6 +619,8 @@
         (encode-simple-op #x71 expr))
        ((eq? tag 'i32.or)
         (encode-simple-op #x72 expr))
+       ((eq? tag 'i32.shr_s)
+        (encode-simple-op #x75 expr))
        (else
         (display expr) (newline)
         (error 'encode-expr "Unrecognized expr")))))
