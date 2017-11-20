@@ -40,7 +40,8 @@
     (index-of-helper x ls 0))
 
   (define (primitives)
-    `((define (cons a d)
+    `((%wasm-import "rt" (rt-add1 n))
+      (define (cons a d)
 	(init-pair (%alloc ,(pair-tag) 2) a d))
       (define (init-pair p a d)
 	(set-car! p a)
@@ -129,10 +130,18 @@
     (cons 'begin (parse-body* body)))
 
   (define (parse-function function)
-    (let ((name (caadr function))
-	  (args (cdadr function))
-	  (body (parse-body (cddr function))))
-      (list (cons name args) body)))
+    (let ((type (car function)))
+      (cond
+       ((eq? 'define type)
+	(let ((name (caadr function))
+	      (args (cdadr function))
+	      (body (parse-body (cddr function))))
+	  (list (cons name args) body)))
+       ((eq? '%wasm-import type)
+	function)
+       (else
+	(display function) (newline)
+	(error 'parse-function "Invalid top-level declaration")))))
 
   (define (parse-functions functions)
     (if (null? functions)
@@ -143,7 +152,7 @@
     ;; For now just assume it's correctly formed. We can do error checking later.
     (let ((body (cddr lib))) ;; skip the library and name
       (let ((exports (cdar body)) ;; names of the functions exported
-	    (functions (parse-functions (append (cddr body) (primitives)))))
+	    (functions (parse-functions (append (primitives) (cddr body)))))
 	(cons exports functions))))
 
   (define (expand-quote expr)
@@ -171,9 +180,11 @@
 	'()
 	(cons (apply-representation-fn (car fn*)) (apply-representation (cdr fn*)))))
   (define (apply-representation-fn fn)
-    (let ((def (car fn))
-	  (body (cadr fn)))
-      (list def (apply-representation-expr body))))
+    (if (eq? (car fn) '%wasm-import)
+	fn
+	(let ((def (car fn))
+	      (body (cadr fn)))
+	  (list def (apply-representation-expr body)))))
   (define (apply-representation-expr expr)
     (let ((tag (car expr)))
       (cond
@@ -307,13 +318,17 @@
 	(error 'compile-pred "Unrecognized predicate")))))
 
   (define (compile-function fn)
-    (let ((args (cdar fn))) ;; basically just a list of the arguments
-      (let ((body (compile-expr (cadr fn) args)))
-	(list '() body)))) ;; the empty list holds the types of the locals
+    (if (eq? (car fn) '%wasm-import)
+	fn
+	(let ((args (cdar fn))) ;; basically just a list of the arguments
+	  (let ((body (compile-expr (cadr fn) args)))
+	    (list '() body))))) ;; the empty list holds the types of the locals
 
   (define (function->type fn)
     ;; Functions are assumed to always return an i32 and take some number of i32s as inputs
-    (let ((args (args->types (cdar fn))))
+    (let ((args (if (eq? (car fn) '%wasm-import)
+		    (args->types (cdaddr fn))
+		    (args->types (cdar fn)))))
       (cons 'fn (list args '(i32)))))
   (define (functions->types fns)
     (if (null? fns)
@@ -322,7 +337,9 @@
 	  (cons type (functions->types (cdr fns))))))
 
   (define (function->name fn)
-    (caar fn))
+    (if (eq? (car fn) '%wasm-import)
+	(caaddr fn)
+	(caar fn)))
   (define (functions->names fns)
     (if (null? fns)
 	'()
@@ -345,7 +362,9 @@
   (define (build-exports exports functions index)
     (if (null? functions)
 	exports
-	(let ((name (caaar functions)))
+	(let ((name (if (eq? (caar functions) '%wasm-import)
+			(caddar functions)
+			(caaar functions))))
 	  (let ((exports (replace-export exports name index)))
 	    (build-exports exports (cdr functions) (+ 1 index))))))
 
@@ -399,8 +418,22 @@
   (define (resolve-calls functions env)
     (if (null? functions)
 	'()
-	(cons (resolve-calls-fn (car functions) env) (resolve-calls (cdr functions) env))))
+	(if (eq? (caar functions) '%wasm-import)
+	    (resolve-calls (cdr functions) env)
+	    (cons (resolve-calls-fn (car functions) env) (resolve-calls (cdr functions) env)))))
 
+  (define (gather-imports compiled-module)
+    (if (null? compiled-module)
+	'()
+	(let ((rest (gather-imports (cdr compiled-module)))
+	      (entry (car compiled-module)))
+	  (if (eq? (caar compiled-module) '%wasm-import)
+	      (let ((module (cadr entry))
+		    (name (symbol->string (caaddr entry)))
+		    (type (function->type entry)))
+		(cons (list module name type) rest))
+	      rest))))
+    
   ;; ====================== ;;
   ;; Wasm Binary Generation ;;
   ;; ====================== ;;
@@ -452,6 +485,17 @@
   (define (wasm-type-section types)
     (make-section 1 (encode-type-vec types)))
 
+  (define (wasm-import-section imports)
+    (make-section 2 (make-vec (length imports) (encode-imports imports 0))))
+  (define (encode-imports imports index)
+    (if (null? imports)
+	'()
+	(append (encode-import (car imports) index) (encode-imports (cdr imports) (+ 1 index)))))
+  (define (encode-import import index)
+    (let ((module (car import))
+	  (name (cadr import)))
+      (append (encode-string module) (encode-string name) '(#x00) (number->leb-u8-list index))))
+  
   (define (encode-u32-vec-contents nums)
     (if (null? nums)
 	'()
@@ -567,16 +611,18 @@
       (let ((exports (car parsed-lib))
 	    (types (functions->types (cdr parsed-lib)))
 	    (function-names (functions->names (cdr parsed-lib))))
-	(let ((exports (build-exports exports (cdr parsed-lib) 0))
-	      (functions (resolve-calls
-			  (compile-functions
-			   (apply-representation
-			    (cdr parsed-lib)))
-			  function-names)))
-	  (let ((module (append (wasm-header)
-				(wasm-type-section types)
-				(wasm-function-section (number-list functions 0))
-				(wasm-memory-section)
-				(wasm-export-section exports)
-				(wasm-code-section functions))))
-	    (u8-list->bytevector module)))))))
+	(let ((compiled-module (compile-functions
+				(apply-representation
+				 (cdr parsed-lib)))))
+	  (let ((exports (build-exports exports (cdr parsed-lib) 0))
+		(imports (gather-imports compiled-module))
+		(functions (resolve-calls compiled-module function-names)))
+	    (let ((module (append (wasm-header)
+				  (wasm-type-section types)
+				  (wasm-import-section imports)
+				  ;; Function signatures happen after imports
+				  (wasm-function-section (number-list functions (length imports)))
+				  (wasm-memory-section)
+				  (wasm-export-section exports)
+				  (wasm-code-section functions))))
+	      (u8-list->bytevector module))))))))
