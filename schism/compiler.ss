@@ -14,6 +14,7 @@
   (define (constant-false) (tag-constant 0 (constant-tag)))
   (define (constant-true) (tag-constant 1 (constant-tag)))
   (define (constant-null) (tag-constant 2 (constant-tag)))
+  (define (constant-eof) (tag-constant 3 (constant-tag)))
 
   (define (pair-tag) 2)
   (define (char-tag) 3)
@@ -42,6 +43,7 @@
 
   (define (primitives)
     `((%wasm-import "rt" (rt-add1 n))
+      (%wasm-import "rt" (read-char))
       (define (cons a d)
 		(init-pair (%alloc ,(pair-tag) 2) a d))
       (define (init-pair p a d)

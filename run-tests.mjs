@@ -1,5 +1,5 @@
 // -*- javascript-mode -*-
-import { rt, js_from_scheme } from './rt/rt';
+import { rt, js_from_scheme, set_current_input_port } from './rt/rt';
 
 import assert from 'assert';
 import child_process from 'child_process';
@@ -14,6 +14,14 @@ async function runTest(name) {
 
   const file = fs.readFileSync('out.wasm');
   const wasm = new WebAssembly.Module(file);
+
+  // set up the input port
+  const input_file = name.replace(".ss", ".input");
+  if (fs.existsSync(input_file)) {
+	set_current_input_port(fs.readFileSync(input_file));
+  } else {
+	set_current_input_port([]);
+  }
 
   const instance = await WebAssembly.instantiate(wasm, { 'rt': rt });
 
