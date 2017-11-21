@@ -20,6 +20,7 @@
 
   (define (pair-tag) 2)
   (define (char-tag) 3)
+  (define (string-tag) 4)
 
   (define (allocation-pointer) 0)
   (define (word-size) 4)
@@ -71,6 +72,13 @@
         (char-between c #\0 #\9))
       (define (char-ci<? c1 c2)
         (< (char->integer c1) (char->integer c2)))
+      (define (list->string ls)
+	;; For now we represent strings as lists of characters. That
+	;; means converting between the two is just a matter of
+	;; changing the tags.
+	(%set-tag ls ,(string-tag)))
+      (define (string->list s)
+	(%set-tag s ,(pair-tag)))
       (define (< a b)
         (if (< a b) #t #f))
       (define (read)
@@ -119,6 +127,8 @@
      ((boolean? expr) (list 'bool expr))
      ((char? expr)
       (list 'char expr))
+     ((string? expr)
+      (list 'call 'list->string (parse-expr (cons 'quote (string->list expr)))))
      ((symbol? expr)
       (list 'var expr))
      ((pair? expr)
@@ -191,7 +201,7 @@
   (define (expand-quote expr)
     (cond
      ;; Literals self-evaluate
-     ((or (number? expr) (boolean? expr) (null? expr))
+     ((or (number? expr) (boolean? expr) (char? expr) (string? expr) (null? expr))
       expr)
      ((pair? expr)
       (list 'cons (expand-quote (car expr)) (expand-quote (cdr expr))))
@@ -316,6 +326,9 @@
           `(i32.mul (i32.shr_s ,a (i32.const ,(tag-size))) ,b)))
        ((eq? tag '%as-fixnum)
         `(i32.and ,(compile-expr (cadr expr) env) (i32.const ,(fixnum-mask))))
+       ((eq? tag '%set-tag)
+	`(i32.or (i32.and ,(compile-expr (cadr expr) env) (i32.const ,(fixnum-mask)))
+		 (i32.shr_s ,(compile-expr (caddr expr) env) (i32.const ,(tag-size)))))
        ((eq? tag '%alloc)
         (let ((tag (compile-expr (cadr expr) env))
               (len (compile-expr (caddr expr) env))) ;; length is in words (i.e. 32-bit)
