@@ -79,6 +79,16 @@
 	(%set-tag ls ,(string-tag)))
       (define (string->list s)
 	(%set-tag s ,(pair-tag)))
+      (define (string-equal? s1 s2)
+	(list-all-eq? (string->list s1) (string->list s2)))
+      (define (list-all-eq? a b)
+	(if (null? a)
+	    (null? b)
+	    (if (null? b)
+		#f
+		(if (eq? (car a) (car b))
+		    (list-all-eq? (cdr a) (cdr b))
+		    #f))))
       (define (< a b)
         (if (< a b) #t #f))
       (define (read)
@@ -128,7 +138,7 @@
      ((char? expr)
       (list 'char expr))
      ((string? expr)
-      (list 'call 'list->string (parse-expr (cons 'quote (string->list expr)))))
+      (list 'call 'list->string (parse-expr (list 'quote (string->list expr)))))
      ((symbol? expr)
       (list 'var expr))
      ((pair? expr)
@@ -332,7 +342,7 @@
        ((eq? tag '%alloc)
         (let ((tag (compile-expr (cadr expr) env))
               (len (compile-expr (caddr expr) env))) ;; length is in words (i.e. 32-bit)
-          ;; We have an unstate assumption that we always allocate at least 8 bytes.
+          ;; We have an unstated assumption that we always allocate at least 8 bytes.
           `(begin
              (i32.load (offset 0) (i32.const ,(allocation-pointer)))
              (i32.store (offset 0)
