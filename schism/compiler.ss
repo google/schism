@@ -3,6 +3,8 @@
   (import (rnrs))
 
   (define (tag-size) 3)
+  (define (fixnum-mask) -8) ;; a magic mask that turns ptrs into fixnums
+  (define (tag-mask) 7)
 
   (define (tag-constant value tag)
     (bitwise-ior (bitwise-arithmetic-shift-left value (tag-size)) tag))
@@ -56,9 +58,9 @@
       (define (cdr p)
 		(read-ptr p ,(word-size)))
       (define (read-ptr p offset)
-		(%read-mem (bitwise-and p -8) offset))
+		(%read-mem (%as-fixnum p) offset))
       (define (char->integer c)
-        (bitwise-and c -8)) ;; TODO: check tag
+        (%as-fixnum c)) ;; TODO: check tag
       (define (char-between c c1 c2) ;; inclusive
         (if (char-ci<? c c1)
             #f
@@ -72,14 +74,22 @@
       (define (< a b)
         (if (< a b) #t #f))
       (define (read)
-        (if (char-numeric? (peek-char))
-            (read-number 0)
-            #f))
+        (start-read (read-char)))
+      (define (start-read c)
+        (if (char-numeric? c)
+            (read-number (- (char->integer c) (char->integer #\0)))
+            (if (eq? c #\#)
+                (read-hash (read-char))
+                #f)))
       (define (read-number acc)
         (if (char-numeric? (peek-char))
             (read-number (+ (* acc 10) (- (char->integer (read-char))
                                           (char->integer #\0))))
             acc))
+      (define (read-hash c)
+        (if (eq? c #\\)
+            (read-char)
+            #f))
       (define (eq? a b)
 		(if (eq? a b) #t #f))
       (define (zero? n)
@@ -88,7 +98,8 @@
 		(eq? x '()))))
 
   (define (intrinsic? x)
-    (or (eq? x '%alloc) (eq? x '%read-mem) (eq? x '%store-mem) (eq? x 'bitwise-and)
+    (or (eq? x '%alloc) (eq? x '%read-mem) (eq? x '%store-mem) (eq? x '%get-tag)
+        (eq? x '%set-tag) (eq? x '%as-fixnum) (eq? x 'bitwise-and)
         (eq? x 'bitwise-not) (eq? x 'eof-object) (eq? x '+) (eq? x '*)
         (eq? x '-) (eq? x 'set-car!) (eq? x 'set-cdr!)))
 
@@ -221,7 +232,7 @@
        ((eq? tag 'begin)
         (cons 'begin (apply-representation-expr* (cdr expr))))
        ((eq? tag 'var) expr)
-       ((eq? tag 'number) expr)
+       ((eq? tag 'number) (list 'ptr (bitwise-arithmetic-shift-left (cadr expr) (tag-size))))
        ((eq? tag 'eof-object) (list 'ptr (constant-eof)))
        ((eq? tag 'call)
         (cons 'call (cons (cadr expr) (apply-representation-expr* (cddr expr)))))
@@ -284,11 +295,11 @@
        ((eq? tag 'set-car!)
         (let ((p (compile-expr (cadr expr) env))
               (x (compile-expr (caddr expr) env)))
-          `(i32.store (offset 0) (i32.and ,p (i32.const -8)) ,x)))
+          `(i32.store (offset 0) (i32.and ,p (i32.const ,(fixnum-mask))) ,x)))
        ((eq? tag 'set-cdr!)
         (let ((p (compile-expr (cadr expr) env))
               (x (compile-expr (caddr expr) env)))
-          `(i32.store (offset ,(word-size)) (i32.and ,p (i32.const -8)) ,x)))
+          `(i32.store (offset ,(word-size)) (i32.and ,p (i32.const ,(fixnum-mask))) ,x)))
        ((eq? tag '+)
         (let ((a (compile-expr (cadr expr) env))
               (b (compile-expr (caddr expr) env)))
@@ -303,6 +314,8 @@
               (b (compile-expr (caddr expr) env)))
           ;; Shift only one of them and we don't have to shift back when we're done.
           `(i32.mul (i32.shr_s ,a (i32.const ,(tag-size))) ,b)))
+       ((eq? tag '%as-fixnum)
+        `(i32.and ,(compile-expr (cadr expr) env) (i32.const ,(fixnum-mask))))
        ((eq? tag '%alloc)
         (let ((tag (compile-expr (cadr expr) env))
               (len (compile-expr (caddr expr) env))) ;; length is in words (i.e. 32-bit)
@@ -318,7 +331,8 @@
              (i32.add (i32.const ,(word-size))))))
        ((eq? tag '%read-mem)
         `(i32.load (offset 0) (i32.add ,(compile-expr (cadr expr) env)
-                                       ,(compile-expr (caddr expr) env))))
+                                       (i32.shr_s ,(compile-expr (caddr expr) env)
+                                                  (i32.const ,(tag-size))))))
        ((eq? tag 'bitwise-and)
         (cons 'i32.and (compile-exprs (cdr expr) env)))
        ((eq? tag 'bitwise-not)
@@ -474,7 +488,7 @@
   ;; ====================== ;;
 
   (define (number->leb-u8-list n)
-    (if (and (< n #x80) (> n (- #x80)))
+    (if (and (< n #x40) (> n (- #x40)))
         (list (bitwise-and n #x7f))
         (cons (bitwise-ior #x80 (bitwise-bit-field n 0 7))
               (number->leb-u8-list (bitwise-arithmetic-shift-right n 7)))))
