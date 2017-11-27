@@ -48,20 +48,28 @@
     `((%wasm-import "rt" (rt-add1 n))
       (%wasm-import "rt" (read-char))
       (%wasm-import "rt" (peek-char))
+      (define (%alloc tag num-words)
+        (let ((base-pair (%set-tag ,(allocation-pointer) ,(pair-tag))))
+          (let ((new-pointer (+ (* ,(word-size) num-words) (car base-pair))))
+            (begin
+              (set-car! base-pair new-pointer)
+              ;; We have an unstated assumption that we always allocate at least 8 bytes.
+              ;; Add two words to offset for base-pair.
+              (%set-tag (+ new-pointer ,(* 2 (word-size))) tag)))))
       (define (cons a d)
-		(init-pair (%alloc ,(pair-tag) 2) a d))
+        (init-pair (%alloc ,(pair-tag) 2) a d))
       (define (init-pair p a d)
-		(set-car! p a)
-		(set-cdr! p d)
-		p)
+        (set-car! p a)
+        (set-cdr! p d)
+        p)
       (define (car p)
-		(read-ptr p 0))
+        (read-ptr p 0))
       (define (cdr p)
-		(read-ptr p ,(word-size)))
+        (read-ptr p ,(word-size)))
       (define (read-ptr p offset)
-		(%read-mem (%as-fixnum p) offset))
+        (%read-mem (%as-fixnum p) offset))
       (define (char->integer c)
-        (%as-fixnum c)) ;; TODO: check tag
+        (%as-fixnum c))              ;; TODO: check tag
       (define (char-between c c1 c2) ;; inclusive
         (if (char-ci<? c c1)
             #f
@@ -73,22 +81,22 @@
       (define (char-ci<? c1 c2)
         (< (char->integer c1) (char->integer c2)))
       (define (list->string ls)
-	;; For now we represent strings as lists of characters. That
-	;; means converting between the two is just a matter of
-	;; changing the tags.
-	(%set-tag ls ,(string-tag)))
+        ;; For now we represent strings as lists of characters. That
+        ;; means converting between the two is just a matter of
+        ;; changing the tags.
+        (%set-tag ls ,(string-tag)))
       (define (string->list s)
-	(%set-tag s ,(pair-tag)))
+        (%set-tag s ,(pair-tag)))
       (define (string-equal? s1 s2)
-	(list-all-eq? (string->list s1) (string->list s2)))
+        (list-all-eq? (string->list s1) (string->list s2)))
       (define (list-all-eq? a b)
-	(if (null? a)
-	    (null? b)
-	    (if (null? b)
-		#f
-		(if (eq? (car a) (car b))
-		    (list-all-eq? (cdr a) (cdr b))
-		    #f))))
+        (if (null? a)
+            (null? b)
+            (if (null? b)
+                #f
+                (if (eq? (car a) (car b))
+                    (list-all-eq? (cdr a) (cdr b))
+                    #f))))
       (define (< a b)
         (if (< a b) #t #f))
       (define (read)
@@ -116,7 +124,7 @@
 		(eq? x '()))))
 
   (define (intrinsic? x)
-    (or (eq? x '%alloc) (eq? x '%read-mem) (eq? x '%store-mem) (eq? x '%get-tag)
+    (or (eq? x '%read-mem) (eq? x '%store-mem) (eq? x '%get-tag)
         (eq? x '%set-tag) (eq? x '%as-fixnum) (eq? x 'bitwise-and)
         (eq? x 'bitwise-not) (eq? x 'eof-object) (eq? x '+) (eq? x '*)
         (eq? x '-) (eq? x 'set-car!) (eq? x 'set-cdr!)))
@@ -151,10 +159,12 @@
                 (c (caddr expr))
                 (a (cadddr expr)))
             (list 'if (parse-pred t) (parse-expr c) (parse-expr a))))
-	 ((eq? op 'let)
-	  (let ((bindings (parse-bindings (cadr expr)))
-		(body (parse-expr (caddr expr))))
-	    (list 'let bindings body)))
+         ((eq? op 'let)
+          (let ((bindings (parse-bindings (cadr expr)))
+                (body (parse-expr (caddr expr))))
+            (list 'let bindings body)))
+         ((eq? op 'begin)
+          (cons 'begin (parse-exprs (cdr expr))))
          ((intrinsic? op)
           (cons op (parse-exprs (cdr expr))))
          (else
@@ -180,11 +190,11 @@
 
   (define (parse-bindings bindings)
     (if (null? bindings)
-	'()
-	(let ((var (caar bindings))
-	      (value (parse-expr (cadar bindings))))
-	  (cons (list var value) (parse-bindings (cdr bindings))))))
-  
+        '()
+        (let ((var (caar bindings))
+              (value (parse-expr (cadar bindings))))
+          (cons (list var value) (parse-bindings (cdr bindings))))))
+
   (define (parse-body* body*)
     (if (null? body*)
         '()
@@ -276,9 +286,9 @@
                 (apply-representation-expr c)
                 (apply-representation-expr a))))
        ((eq? tag 'let)
-	(list 'let
-	      (apply-representation-bindings (cadr expr))
-	      (apply-representation-expr (caddr expr))))
+        (list 'let
+              (apply-representation-bindings (cadr expr))
+              (apply-representation-expr (caddr expr))))
        ((intrinsic? tag)
         (cons tag (apply-representation-expr* (cdr expr))))
        (else
@@ -307,10 +317,10 @@
         (error 'apply-representation-pred "Unrecognized pred")))))
   (define (apply-representation-bindings bindings)
     (if (null? bindings)
-	'()
-	(cons (list (caar bindings)
-		    (apply-representation-expr (cadar bindings)))
-	      (apply-representation-bindings (cdr bindings)))))
+        '()
+        (cons (list (caar bindings)
+                    (apply-representation-expr (cadar bindings)))
+              (apply-representation-bindings (cdr bindings)))))
 
   ;; ====================== ;;
   ;; Compile (make wasm)    ;;
@@ -334,10 +344,10 @@
               (a (cadddr expr)))
           (list 'if (compile-pred t env) (compile-expr c env) (compile-expr a env))))
        ((eq? tag 'let)
-	(let ((index (length env)))
-	  (list 'begin
-		(compile-bindings (cadr expr) env index)
-		(compile-expr (caddr expr) (bindings->env (cadr expr) env index)))))
+        (let ((index (length env)))
+          (list 'begin
+                (compile-bindings (cadr expr) env index)
+                (compile-expr (caddr expr) (bindings->env (cadr expr) env index)))))
        ((eq? tag 'set-car!)
         (let ((p (compile-expr (cadr expr) env))
               (x (compile-expr (caddr expr) env)))
@@ -363,21 +373,8 @@
        ((eq? tag '%as-fixnum)
         `(i32.and ,(compile-expr (cadr expr) env) (i32.const ,(fixnum-mask))))
        ((eq? tag '%set-tag)
-	`(i32.or (i32.and ,(compile-expr (cadr expr) env) (i32.const ,(fixnum-mask)))
-		 (i32.shr_s ,(compile-expr (caddr expr) env) (i32.const ,(tag-size)))))
-       ((eq? tag '%alloc)
-        (let ((tag (compile-expr (cadr expr) env))
-              (len (compile-expr (caddr expr) env))) ;; length is in words (i.e. 32-bit)
-          ;; We have an unstated assumption that we always allocate at least 8 bytes.
-          `(begin
-             (i32.load (offset 0) (i32.const ,(allocation-pointer)))
-             (i32.store (offset 0)
-                        (i32.const ,(allocation-pointer))
-                        (i32.add (i32.load (offset 0) (i32.const ,(allocation-pointer)))
-                                 (i32.mul (i32.const ,(word-size)) ,len)))
-             (i32.or ,tag)
-             ;; Add one word to save room for the allocation pointer
-             (i32.add (i32.const ,(word-size))))))
+        `(i32.or (i32.and ,(compile-expr (cadr expr) env) (i32.const ,(fixnum-mask)))
+                 (i32.shr_s ,(compile-expr (caddr expr) env) (i32.const ,(tag-size)))))
        ((eq? tag '%read-mem)
         `(i32.load (offset 0) (i32.add ,(compile-expr (cadr expr) env)
                                        (i32.shr_s ,(compile-expr (caddr expr) env)
@@ -416,56 +413,56 @@
 
   (define (bindings->env bindings env index)
     (if (null? bindings)
-	env
-	(cons (cons (caar bindings) index)
-	      (bindings->env (cdr bindings) env (+ 1 index)))))
+        env
+        (cons (cons (caar bindings) index)
+              (bindings->env (cdr bindings) env (+ 1 index)))))
   (define (compile-binding binding env index)
     (list 'set-local index (compile-expr (cadr binding) env)))
   (define (compile-bindings bindings env index)
     (if (null? (cdr bindings))
-	(compile-binding (car bindings) env index)
-	(list 'begin
-	      (compile-binding (car bindings) env index)
-	      (compile-bindings (cdr bindings) env (+ 1 index)))))
+        (compile-binding (car bindings) env index)
+        (list 'begin
+              (compile-binding (car bindings) env index)
+              (compile-bindings (cdr bindings) env (+ 1 index)))))
   (define (compile-function fn)
     (if (eq? (car fn) '%wasm-import)
         fn
         (let ((args (number-variables (cdar fn) 0)))
           (let ((body (compile-expr (cadr fn) args)))
             (list
-	     (- (count-locals body) (length args)) ;; Number of local variables
-	     body)))))
+             (- (count-locals body) (length args)) ;; Number of local variables
+             body)))))
 
   ;; Determines how many instructions were used in a body.
   (define (count-locals body)
     (let ((tag (car body)))
       (cond
        ((eq? tag 'begin)
-	(count-locals-exprs (cdr body)))
+        (count-locals-exprs (cdr body)))
        ((eq? tag 'call)
-	(count-locals-exprs (cddr body)))
+        (count-locals-exprs (cddr body)))
        ((eq? tag 'get-local) 0)
        ((eq? tag 'set-local) (+ 1 (cadr body)))
        ((wasm-simple-op? tag)
-	(count-locals-exprs (cdr body)))
+        (count-locals-exprs (cdr body)))
        ((eq? tag 'i32.const) 0)
        ((or (eq? tag 'i32.store) (eq? tag 'i32.load))
-	(count-locals-exprs (cddr body)))
+        (count-locals-exprs (cddr body)))
        ((eq? tag 'if)
-	(count-locals-exprs (cdr body)))
+        (count-locals-exprs (cdr body)))
        (else
-	(trace-value body)
-	(error 'count-locals "Unrecognized expression")))))
+        (trace-value body)
+        (error 'count-locals "Unrecognized expression")))))
   (define (count-locals-exprs exprs)
     (if (null? exprs)
-	0
-	(max (count-locals (car exprs)) (count-locals-exprs (cdr exprs)))))
-  
+        0
+        (max (count-locals (car exprs)) (count-locals-exprs (cdr exprs)))))
+
   (define (number-variables vars index)
     (if (pair? vars)
-	(cons (cons (car vars) index) (number-variables (cdr vars) (+ 1 index)))
-	'()))
-  
+        (cons (cons (car vars) index) (number-variables (cdr vars) (+ 1 index)))
+        '()))
+
   (define (function->type fn)
     ;; Functions are assumed to always return an i32 and take some number of i32s as inputs
     (let ((args (if (eq? (car fn) '%wasm-import)
@@ -690,7 +687,7 @@
        ((eq? tag 'get-local)
         (cons #x20 (number->leb-u8-list (cadr expr))))
        ((eq? tag 'set-local)
-	(append (encode-expr (caddr expr)) (cons #x21 (number->leb-u8-list (cadr expr)))))
+        (append (encode-expr (caddr expr)) (cons #x21 (number->leb-u8-list (cadr expr)))))
        ((eq? tag 'call)
         (append (encode-exprs (cddr expr))
                 (cons #x10 (number->leb-u8-list (cadr expr)))))
@@ -738,11 +735,11 @@
 
   (define (encode-code locals body)
     (let ((contents (append
-		     (if (zero? locals)
-			 (make-vec 0 '())
-			 (make-vec 1 (append (number->leb-u8-list locals) (list #x7f))))
-		     (encode-expr body)
-		     '(#x0b))))
+                     (if (zero? locals)
+                         (make-vec 0 '())
+                         (make-vec 1 (append (number->leb-u8-list locals) (list #x7f))))
+                     (encode-expr body)
+                     '(#x0b))))
       (make-vec (length contents) contents)))
 
   (define (encode-codes codes)
