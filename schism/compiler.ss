@@ -305,7 +305,7 @@
        ((eq? tag 'begin) (cons 'begin (compile-exprs (cdr expr) env)))
        ((eq? tag 'number) (cons 'i32.const (cdr expr)))
        ((eq? tag 'ptr) (cons 'i32.const (cdr expr)))
-       ((eq? tag 'var) (list 'get-local (index-of (cadr expr) env)))
+       ((eq? tag 'var) (list 'get-local (cdr (assq (cadr expr) env))))
        ((eq? tag 'call) (cons 'call (cons (cadr expr) (compile-exprs (cddr expr) env))))
        ((eq? tag 'if)
         (let ((t (cadr expr))
@@ -391,10 +391,15 @@
   (define (compile-function fn)
     (if (eq? (car fn) '%wasm-import)
         fn
-        (let ((args (cdar fn))) ;; basically just a list of the arguments
+        (let ((args (number-variables (cdar fn) 0)))
           (let ((body (compile-expr (cadr fn) args)))
             (list '() body))))) ;; the empty list holds the types of the locals
 
+  (define (number-variables vars index)
+    (if (pair? vars)
+	(cons (cons (car vars) index) (number-variables (cdr vars) (+ 1 index)))
+	'()))
+  
   (define (function->type fn)
     ;; Functions are assumed to always return an i32 and take some number of i32s as inputs
     (let ((args (if (eq? (car fn) '%wasm-import)
