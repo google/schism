@@ -19,8 +19,10 @@ function extract_value(value) {
 }
 
 const SCHEME_CONSTANTS = {
-    0: false,
-    1: true
+  0: false,
+  1: true,
+  2: null,
+  3: "#<eof-object>",
 }
 
 const CONSTANTS = {
