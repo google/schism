@@ -195,7 +195,19 @@
           ((eq? c #\t)
            #t)
           ((eq? c #\\)
-           (read-char))
+           (let ((c (read-char)))
+             (cond
+              ((and (eq? c #\s) (eq? (peek-char) #\p)) ;; check if this is a space
+               (let ((p (read-char)) (a (read-char)) (c (read-char)) (e (read-char)))
+                 #\space))
+              ((and (eq? c #\t) (eq? (peek-char) #\a)) ;; check if this is a tab
+               (let ((a (read-char)) (b (read-char)))
+                 #\tab))
+              ((and (eq? c #\n) (eq? (peek-char) #\e)) ;; check if this is a newline
+               (let ((e (read-char)) (w (read-char)) (l (read-char)) (i (read-char))
+                     (n (read-char)) (e^ (read-char)))
+                 #\newline))
+              (else c))))
           ((eq? c #\x)
            (read-hex 0))
           (else #f)))

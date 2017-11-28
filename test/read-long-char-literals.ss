@@ -4,4 +4,4 @@
   (import (rnrs))
   
   (define (do-test)
-    (string-equal? (read) "Hello, WebAssembly!")))
+    (list-all-eq? (read) '(#\space #\tab #\newline))))
