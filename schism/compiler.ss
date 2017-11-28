@@ -202,7 +202,9 @@
       (let ((op (car expr)))
         (cond
          ((eq? op 'quote)
-          (parse-expr (expand-quote (cadr expr))))
+          (parse-expr (expand-quote (cadr expr) #f)))
+         ((eq? op 'quasiquote)
+          (parse-expr (expand-quote (cadr expr) #t)))
          ((eq? op 'if)
           (let ((t (cadr expr))
                 (c (caddr expr))
@@ -278,7 +280,7 @@
             (functions (parse-functions (append (primitives) (cddr body)))))
         (cons exports functions))))
 
-  (define (expand-quote expr)
+  (define (expand-quote expr quasi)
     (cond
      ;; Literals self-evaluate
      ((or (number? expr) (boolean? expr) (char? expr) (string? expr) (null? expr))
@@ -286,7 +288,9 @@
      ((symbol? expr)
       `(string->symbol ,(symbol->string expr)))
      ((pair? expr)
-      (list 'cons (expand-quote (car expr)) (expand-quote (cdr expr))))
+      (if (and quasi (eq? (car expr) 'unquote))
+          (cadr expr)
+          (list 'cons (expand-quote (car expr) quasi) (expand-quote (cdr expr) quasi))))
      (else
       (error 'expand-quote "Invalid datum" expr))))
 
