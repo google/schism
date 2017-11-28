@@ -25,7 +25,13 @@ async function runTest(name) {
 
   const instance = await WebAssembly.instantiate(wasm, { 'rt': rt });
 
-  const result = js_from_scheme(instance.exports['do-test']());
+  let result;
+  try {
+	result = js_from_scheme(instance.exports['do-test']());
+  } catch (e) {
+	console.error(e.stack);
+	throw e;
+  }
   assert.ok(result != false, "test failed");
 }
 

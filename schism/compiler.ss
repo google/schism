@@ -127,6 +127,8 @@
          (cond
           ((char-numeric? c)
            (read-number (- (char->integer c) (char->integer #\0))))
+          ((and (eq? c #\-) (char-numeric? (peek-char)))
+           (- 0 (read-number 0)))
           ((eq? c #\#)
            (read-hash (read-char)))
           ((eq? c #\()
@@ -898,8 +900,8 @@
   (define (wasm-memory-section)
     ;; For now we hardcode a memory
     (make-section 5 (make-vec 1
-                              ;; Memory with 1 page and no maximum
-                              (list 0 1))))
+                              ;; Memory with 256 pages and no maximum
+                              (cons 0 (number->leb-u8-list 256)))))
 
   ;; Takes a library and returns a bytevector of the corresponding Wasm module
   ;; bytes
