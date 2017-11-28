@@ -273,6 +273,8 @@
      ;; Literals self-evaluate
      ((or (number? expr) (boolean? expr) (char? expr) (string? expr) (null? expr))
       expr)
+     ((symbol? expr)
+      `(string->symbol ,(symbol->string expr)))
      ((pair? expr)
       (list 'cons (expand-quote (car expr)) (expand-quote (cdr expr))))
      (else
