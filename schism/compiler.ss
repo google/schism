@@ -1,6 +1,7 @@
 (library (schism compiler)
   (export compile-library)
-  (import (rnrs))
+  (import (rnrs)
+          (only (chezscheme) gensym))
 
   (define (tag-size) 3)
   (define (fixnum-mask) -8) ;; a magic mask that turns ptrs into fixnums
@@ -132,6 +133,25 @@
   ;; ====================== ;;
   ;; Parsing                ;;
   ;; ====================== ;;
+
+  (define (expand-macros expr)
+    (if (pair? expr)
+        (let ((tag (car expr)))
+          (cond
+           ((eq? tag 'or)
+            (if (null? (cdr expr))
+                #f
+                (if (null? (cddr expr))
+                    (expand-macros (cadr expr))
+                    (let ((t (gensym "t")))
+                      `(let ((,t ,(expand-macros (cadr expr))))
+                         (if ,t ,t ,(expand-macros (cons 'or (cddr expr)))))))))
+           (else (expand-macros* expr))))
+        expr))
+  (define (expand-macros* exprs)
+    (if (null? exprs)
+        '()
+        (cons (expand-macros (car exprs)) (expand-macros* (cdr exprs)))))
 
   (define (parse-exprs exprs)
     (if (null? exprs)
@@ -759,7 +779,8 @@
   ;; Takes a library and returns a bytevector of the corresponding Wasm module
   ;; bytes
   (define (compile-library library)
-    (let ((parsed-lib (parse-library library))) ;; (parsed-lib : (exports . functions)
+    ;; (parsed-lib : (exports . functions)
+    (let ((parsed-lib (parse-library (expand-macros library))))
       (let ((exports (car parsed-lib))
             (types (functions->types (cdr parsed-lib)))
             (function-names (functions->names (cdr parsed-lib))))
