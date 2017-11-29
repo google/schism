@@ -1,5 +1,5 @@
 (library (schism compiler)
-  (export compile-library)
+  (export compile-library compile-stdin->stdout)
   (import (rnrs)
           (only (chezscheme) gensym))
 
@@ -51,6 +51,7 @@
      `((%wasm-import "rt" (rt-add1 n))
        (%wasm-import "rt" (read-char))
        (%wasm-import "rt" (peek-char))
+       (%wasm-import "rt" (write-char c))
        ;; display, newline, etc are all just enough to compile. We'll fill them in later.
        (define (display x) x)
        (define (write x) x)
@@ -106,8 +107,8 @@
              (cons (car a) (append (cdr a) b))))
        (define (read-ptr p offset)
          (%read-mem (%as-fixnum p) offset))
-       (define (char->integer c)
-         (%as-fixnum c))              ;; TODO: check tag
+       (define (char->integer c) (%as-fixnum c)) ;; TODO: check tag
+       (define (integer->char c) (%set-tag c ,(char-tag)))
        (define (char-between c c1 c2) ;; inclusive
          (if (char-ci<? c c1)
              #f
@@ -966,7 +967,7 @@
                               ;; Memory with 256 pages and no maximum
                               (cons 0 (number->leb-u8-list 256)))))
 
-  ;; Takes a library and returns a bytevector of the corresponding Wasm module
+  ;; Takes a library and returns a list of the corresponding Wasm module
   ;; bytes
   (define (compile-library library)
     ;; (parsed-lib : (exports . functions)
@@ -980,13 +981,19 @@
           (let ((exports (build-exports exports (cdr parsed-lib) 0))
                 (imports (gather-imports compiled-module))
                 (functions (resolve-calls compiled-module function-names)))
-            (let ((module (append (append (wasm-header)
-                                          (wasm-type-section types))
-                                  (append (wasm-import-section imports)
-                                          ;; Function signatures happen after imports
-                                          (wasm-function-section (number-list functions
-                                                                              (length imports))))
-                                  (append (append (wasm-memory-section)
-                                                  (wasm-export-section exports))
-                                          (wasm-code-section functions)))))
-              module)))))))
+            (append (append (wasm-header)
+                            (wasm-type-section types))
+                    (append (wasm-import-section imports)
+                            ;; Function signatures happen after imports
+                            (wasm-function-section (number-list functions
+                                                                (length imports))))
+                    (append (append (wasm-memory-section)
+                                    (wasm-export-section exports))
+                            (wasm-code-section functions))))))))
+  (define (write-bytes ls)
+    (if (null? ls)
+        #t
+        (let ((_ (write-char (integer->char (car ls)))))
+          (write-bytes (cdr ls)))))
+  (define (compile-stdin->stdout)
+    (write-bytes (compile-library (read)))))

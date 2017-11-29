@@ -3,7 +3,7 @@ const TAGS = {
   fixnum: 0,
   constant: 1,
   pair: 2,
-  char: 3,
+  character: 3,
 };
 
 function tag_constant(value, tag) {
@@ -39,6 +39,8 @@ export function js_from_scheme(ptr) {
 	return ptr >> TAG_SIZE; // sign extending shift so negatives work.
     case TAGS.constant:
 	return SCHEME_CONSTANTS[extract_value(ptr)];
+    case TAGS.character:
+	return String.fromCharCode(extract_value(ptr));
     }
 }
 
@@ -53,6 +55,8 @@ export function set_current_input_port(data) {
   input_port_data = data;
   input_index = 0;
 }
+
+export const output_data = []
 
 export const rt = {
   'rt-add1': function(ptr) {
@@ -70,5 +74,8 @@ export const rt = {
       return tag_constant(input_port_data[input_index], TAGS.char);
     }
     return CONSTANTS.eof;
+  },
+  'write-char': function(c) {
+    output_data.push(js_from_scheme(ptr));
   }
 };
