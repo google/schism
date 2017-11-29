@@ -65,13 +65,13 @@ export const rt = {
   },
   'read-char': function() {
     if (input_index < input_port_data.length) {
-      return tag_constant(input_port_data[input_index++], TAGS.char);
+      return tag_constant(input_port_data[input_index++], TAGS.character);
     }
     return CONSTANTS.eof;
   },
   'peek-char': function() {
     if (input_index < input_port_data.length) {
-      return tag_constant(input_port_data[input_index], TAGS.char);
+      return tag_constant(input_port_data[input_index], TAGS.character);
     }
     return CONSTANTS.eof;
   },

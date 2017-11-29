@@ -18,14 +18,12 @@ async function runSchism() {
 
   const instance = await WebAssembly.instantiate(wasm, { 'rt': rt });
 
-  try {
-	js_from_scheme(instance.exports['do-test']());
-  } catch (e) {
-	console.error(e.stack);
-	throw e;
-  }
+  js_from_scheme(instance.exports['compile-stdin->stdout']());
 
   console.info(output_data);
 }
 
-runSchism();
+runSchism().catch((e) => {
+  console.error(e.stack);
+  throw e;
+})

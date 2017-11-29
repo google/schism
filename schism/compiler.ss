@@ -32,17 +32,18 @@
   ;; ====================== ;;
 
   (define (trace-value x)
-    (write x) (newline)
-    x)
+    (let ((_ (write x)))
+      (let ((_ (newline)))
+        x)))
 
   (define (index-of-helper x ls index)
     (if (pair? ls)
         (if (eq? x (car ls))
             index
             (index-of-helper x (cdr ls) (+ 1 index)))
-        (begin
-          (display x) (newline)
-          (error 'index-of "Could not find item"))))
+        (let ((_ (display x)))
+          (let ((_ (newline)))
+              (error 'index-of "Could not find item")))))
   (define (index-of x ls)
     (index-of-helper x ls 0))
 
@@ -363,8 +364,9 @@
           ;; this is a function call
           (cons 'call (cons (car expr) (parse-exprs (cdr expr))))))))
      (else
-      (display expr) (newline)
-      (error 'parse-expr "Unrecognized expression"))))
+      (let ((_ (display expr)))
+        (let ((_ (newline)))
+          (error 'parse-expr "Unrecognized expression"))))))
   (define (parse-pred expr)
     (cond
      ((boolean? expr) `(bool ,expr))
@@ -406,8 +408,9 @@
        ((eq? '%wasm-import type)
         function)
        (else
-        (display function) (newline)
-        (error 'parse-function "Invalid top-level declaration")))))
+        (let ((_ (display function)))
+          (let ((_ (newline)))
+            (error 'parse-function "Invalid top-level declaration")))))))
 
   (define (parse-functions functions)
     (if (null? functions)
@@ -433,7 +436,8 @@
           (cadr expr)
           `(cons ,(expand-quote (car expr) quasi) ,(expand-quote (cdr expr) quasi))))
      (else
-      (error 'expand-quote "Invalid datum" expr))))
+      (let ((_ (trace-value expr)))
+        (error 'expand-quote "Invalid datum")))))
 
   (define (args->types args)
     (if (null? args)
@@ -487,8 +491,9 @@
        ((intrinsic? tag)
         (cons tag (apply-representation-expr* (cdr expr))))
        (else
-        (display expr) (newline)
-        (error 'apply-representation-expr "Unrecognized expr")))))
+        (let ((_ (display expr)))
+          (let ((_ (newline)))
+            (error 'apply-representation-expr "Unrecognized expr")))))))
   (define (apply-representation-expr* expr*)
     (if (null? expr*)
         '()
@@ -508,8 +513,9 @@
                           ,(apply-representation-expr (caddr pred))))
        ((eq? tag 'bool) pred)
        (else
-        (display pred) (newline)
-        (error 'apply-representation-pred "Unrecognized pred")))))
+        (let ((_ (display pred)))
+          (let ((_ (newline)))
+            (error 'apply-representation-pred "Unrecognized pred")))))))
   (define (apply-representation-bindings bindings)
     (if (null? bindings)
         '()
@@ -587,7 +593,9 @@
         (cons 'i32.shl (compile-exprs (cdr expr) env)))
        ((eq? tag 'bitwise-arithmetic-shift-right)
         (cons 'i32.shr_s (compile-exprs (cdr expr) env)))
-       (else (display expr) (newline) (error 'compile-expr "Unrecognized expression")))))
+       (else (let ((_ (display expr)))
+               (let ((_ (newline)))
+                 (error 'compile-expr "Unrecognized expression")))))))
   (define (compile-pred expr env)
     (let ((op (car expr)))
       (cond
@@ -612,8 +620,9 @@
             '(i32.const 1)
             '(i32.const 0)))
        (else
-        (display expr) (newline)
-        (error 'compile-pred "Unrecognized predicate")))))
+        (let ((_ (display expr)))
+          (let ((_ (newline)))
+            (error 'compile-pred "Unrecognized predicate")))))))
 
   (define (bindings->env bindings env index)
     (if (null? bindings)
@@ -654,8 +663,8 @@
        ((eq? tag 'if)
         (count-locals-exprs (cdr body)))
        (else
-        (trace-value body)
-        (error 'count-locals "Unrecognized expression")))))
+        (let ((_ (trace-value body)))
+          (error 'count-locals "Unrecognized expression"))))))
   (define (count-locals-exprs exprs)
     (if (null? exprs)
         0
@@ -755,8 +764,8 @@
         (let ((args (resolve-calls-exprs (cdr expr) env)))
           (cons tag args)))
        (else
-        (display expr) (newline)
-        (error 'resolve-calls-expr "Unrecognized expression")))))
+        (let ((_ (trace-value expr)))
+          (error 'resolve-calls-expr "Unrecognized expression"))))))
   (define (resolve-calls-fn function env)
     `(,(car function) ,(resolve-calls-expr (cadr function) env)))
   (define (resolve-calls functions env)
@@ -824,7 +833,7 @@
      ;; functions are (fn (t1 ...) (t2 ...)), for t1 ... -> t2 ...
      ((and (pair? type) (eq? (car type) 'fn))
       (cons #x60 (append (encode-type-vec (cadr type)) (encode-type-vec (caddr type)))))
-     (else (display type) (newline) (error 'encode-type "Unrecognized type"))))
+     (else (let ((_ (trace-value type))) (error 'encode-type "Unrecognized type")))))
 
   (define (wasm-type-section types)
     (make-section 1 (encode-type-vec types)))
@@ -857,8 +866,8 @@
      ((eq? (car export) 'fn)
       (append (encode-string (caddr export)) (cons #x00 (number->leb-u8-list (cadr export)))))
      (else
-      (trace-value export)
-      (error 'encode-export "Unrecognized export"))))
+      (let ((_ (trace-value export)))
+        (error 'encode-export "Unrecognized export")))))
 
   (define (encode-export-contents exports)
     (if (null? exports)
@@ -941,8 +950,8 @@
        ((eq? tag 'i32.shr_s)
         (encode-simple-op #x75 expr))
        (else
-        (display expr) (newline)
-        (error 'encode-expr "Unrecognized expr")))))
+        (let ((_ (trace-value expr)))
+          (error 'encode-expr "Unrecognized expr"))))))
 
   (define (encode-code locals body)
     (let ((contents (append
@@ -981,12 +990,12 @@
           (let ((exports (build-exports exports (cdr parsed-lib) 0))
                 (imports (gather-imports compiled-module))
                 (functions (resolve-calls compiled-module function-names)))
-            (append (append (wasm-header)
-                            (wasm-type-section types))
-                    (append (wasm-import-section imports)
-                            ;; Function signatures happen after imports
-                            (wasm-function-section (number-list functions
-                                                                (length imports))))
+            (append (append (append (wasm-header)
+                                    (wasm-type-section types))
+                            (append (wasm-import-section imports)
+                                    ;; Function signatures happen after imports
+                                    (wasm-function-section (number-list functions
+                                                                        (length imports)))))
                     (append (append (wasm-memory-section)
                                     (wasm-export-section exports))
                             (wasm-code-section functions))))))))
