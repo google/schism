@@ -1,3 +1,4 @@
+// -*- javascript -*-
 const TAG_SIZE = 3;
 const TAGS = {
   fixnum: 0,
@@ -56,26 +57,27 @@ export function set_current_input_port(data) {
   input_index = 0;
 }
 
-export const output_data = []
+export let output_data = []
 
 export const rt = {
-  'rt-add1': function(ptr) {
-    // This is a trivial function that is mostly used to test function imports.
-    return fixnum_from_number(js_from_scheme(ptr) + 1);
-  },
-  'read-char': function() {
-    if (input_index < input_port_data.length) {
-      return tag_constant(input_port_data[input_index++], TAGS.character);
+    'rt-add1': function(ptr) {
+	// This is a trivial function that is mostly used to test function imports.
+	return fixnum_from_number(js_from_scheme(ptr) + 1);
+    },
+    'read-char': function() {
+	if (input_index < input_port_data.length) {
+	    return tag_constant(input_port_data[input_index++], TAGS.character);
+	}
+	return CONSTANTS.eof;
+    },
+    'peek-char': function() {
+	if (input_index < input_port_data.length) {
+	    return tag_constant(input_port_data[input_index], TAGS.character);
+	}
+	return CONSTANTS.eof;
+    },
+    'write-char': function(ptr) {
+	const byte = js_from_scheme(ptr).charCodeAt(0);
+	output_data.push(byte);
     }
-    return CONSTANTS.eof;
-  },
-  'peek-char': function() {
-    if (input_index < input_port_data.length) {
-      return tag_constant(input_port_data[input_index], TAGS.character);
-    }
-    return CONSTANTS.eof;
-  },
-  'write-char': function(c) {
-    output_data.push(js_from_scheme(ptr));
-  }
 };

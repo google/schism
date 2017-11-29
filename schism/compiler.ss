@@ -972,10 +972,8 @@
     (make-section 10 (make-vec (length codes) (encode-codes codes))))
 
   (define (wasm-memory-section)
-    ;; For now we hardcode a memory
-    (make-section 5 (make-vec 1
-                              ;; Memory with 8192 pages and no maximum
-                              (cons 0 (number->leb-u8-list 8192)))))
+    ;; For now we hardcode a memory with 8192 pages and no maximum
+    (make-section 5 (make-vec 1 (cons 0 (number->leb-u8-list 8192)))))
 
   ;; Takes a library and returns a list of the corresponding Wasm module
   ;; bytes

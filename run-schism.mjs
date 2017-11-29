@@ -1,4 +1,4 @@
-// -*- javascript-mode -*-
+// -*- javascript -*-
 import { rt, js_from_scheme, set_current_input_port, output_data } from './rt/rt';
 
 import fs from 'fs';
