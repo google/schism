@@ -22,28 +22,30 @@ async function compileBootstrap() {
 }
 
 async function runTest(name, compile = compileWithHostScheme) {
-    const file = await compile(name);
-    const wasm = new WebAssembly.Module(file);
+  const file = await compile(name);
+  const wasm = new WebAssembly.Module(file);
 
-    // set up the input port
-    const input_file = name.replace(".ss", ".input");
-    if (fs.existsSync(input_file)) {
-	set_current_input_port(fs.readFileSync(input_file));
-    } else {
-	set_current_input_port([]);
-    }
+  // set up the input port
+  const input_file = name.replace(".ss", ".input");
+  if (fs.existsSync(input_file)) {
+    set_current_input_port(fs.readFileSync(input_file));
+  } else {
+    set_current_input_port([]);
+  }
 
-    const instance = await WebAssembly.instantiate(wasm, { 'rt': rt });
+  const instance = await WebAssembly.instantiate(wasm, { 'rt': rt });
 
-    let result;
-    try {
-	result = js_from_scheme(instance.exports['do-test']());
-    } catch (e) {
-	console.error(e.stack);
-	throw e;
-    }
-    // console.info(result);
-    assert.ok(result != false, "test failed");
+  let raw_result;
+  let result;
+  try {
+    raw_result = instance.exports['do-test']();
+    result = js_from_scheme(raw_result);
+  } catch (e) {
+    console.error(e.stack);
+    throw e;
+  }
+  //console.info(raw_result);
+  assert.ok(result != false, "test failed");
 }
 
 async function runTests(compile = compileWithHostScheme) {
@@ -71,7 +73,7 @@ const compileWithWasmScheme = (async function() {
     };
 }());
 
-const use_host_compiler = true;
+const use_host_compiler = false;
 if (use_host_compiler) {
     runTests().catch((e) => {
       console.error(e.stack);

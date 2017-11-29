@@ -95,8 +95,8 @@
        (define (cdaddr p) (cdr (car (cdr (cdr p)))))
        (define (assq x ls)
          (if (pair? ls)
-             (if (eq? x (car ls))
-                 ls
+             (if (eq? x (caar ls))
+                 (car ls)
                  (assq x (cdr ls)))
              (error 'assq "not a pair")))
        (define (length ls)
@@ -104,9 +104,37 @@
              0
              (+ 1 (length (cdr ls)))))
        (define (append a b)
-         (if (null? a)
-             b
-             (cons (car a) (append (cdr a) b))))
+         (drive-k a b '(empty-k)))
+       (define (apply-k k v fuel)
+         (if (zero? fuel)
+             (cons #f (cons 'apply-k (cons k (cons v '()))))
+             (let ((type (car k)))
+               (cond
+                ((eq? type 'empty-k) (cons #t v))
+                ((eq? type 'cons-k)
+                 (let ((a (cadr k))
+                       (k (caddr k)))
+                   (apply-k k (cons a v) (- fuel 1))))
+                (else #f)))))
+       (define (append-k a b k fuel)
+         (if (zero? fuel)
+             (cons #f (cons 'append-k (cons a (cons b (cons k '())))))
+             (if (null? a)
+                 (apply-k k b (- fuel 1))
+                 (append-k (cdr a) b (cons 'cons-k (cons (car a) (cons k '()))) (- fuel 1)))))
+       (define (drive-k a b k)
+         (let ((result (append-k a b k 1000)))
+           (if (car result)
+               (cdr result)
+               (if (eq? (cadr result) 'append-k)
+                   (let ((result (cdr result)))
+                     (let ((a (cadr result))
+                           (b (caddr result))
+                           (k (cadddr result)))
+                       (drive-k a b k)))
+                   (let ((k (caddr result))
+                         (v (cadddr result)))
+                     (apply-k k v 1000))))))
        (define (read-ptr p offset)
          (%read-mem (%as-fixnum p) offset))
        (define (char->integer c) (%as-fixnum c)) ;; TODO: check tag
@@ -560,10 +588,7 @@
               (b (compile-expr (caddr expr) env)))
           `(i32.add ,a ,b)))
        ((eq? tag '-)
-        (let ((a (compile-expr (cadr expr) env))
-              (b (compile-expr (caddr expr) env)))
-          ;; Subtraction might borrow into the tag, so mask off the low bits
-          `(i32.and (i32.sub ,a ,b) (i32.const -8))))
+        `(i32.sub ,(compile-expr (cadr expr) env) ,(compile-expr (caddr expr) env)))
        ((eq? tag '*)
         (let ((a (compile-expr (cadr expr) env))
               (b (compile-expr (caddr expr) env)))
@@ -851,8 +876,9 @@
   (define (encode-import import index)
     (let ((module (car import))
           (name (cadr import)))
-      (append (append (encode-string module) (encode-string name))
-              (append '(#x00) (number->leb-u8-list index)))))
+      (append (encode-string module)
+              (append (encode-string name)
+                      (append '(#x00) (number->leb-u8-list index))))))
 
   (define (encode-u32-vec-contents nums)
     (if (null? nums)
@@ -916,12 +942,9 @@
               (c (caddr expr))
               (a (cadddr expr)))
           ;; For now, if blocks are assumed to always return i32
-          (append (append (encode-expr t)
-                          '(#x04 #x7f))
-                  (append (append (encode-expr c)
-                                  '(#x05))
-                          (append (encode-expr a)
-                                  '(#x0b))))))
+          (append (encode-expr t)
+                  (cons #x04 (cons #x7f (append (encode-expr c)
+                                                (cons #x05 (append (encode-expr a) '(#x0b)))))))))
        ((eq? tag 'i32.store)
         (let ((align 0)
               (offset (cadadr expr))
@@ -934,9 +957,8 @@
         (let ((align 0)
               (offset (cadadr expr))
               (index (encode-expr (caddr expr))))
-          (append index
-                  (append '(#x28 #x0) ;;always use 0 alignment
-                          (number->leb-u8-list offset)))))
+          (append index (append '(#x28 #x0) ;;always use 0 alignment
+                                (number->leb-u8-list offset)))))
        ((eq? tag 'i32.add)
         (encode-simple-op #x6a expr))
        ((eq? tag 'i32.sub)
@@ -975,8 +997,8 @@
     (make-section 10 (make-vec (length codes) (encode-codes codes))))
 
   (define (wasm-memory-section)
-    ;; For now we hardcode a memory with 8192 pages and no maximum
-    (make-section 5 (make-vec 1 (cons 0 (number->leb-u8-list 8192)))))
+    ;; For now we hardcode a memory with 32767 pages and no maximum
+    (make-section 5 (make-vec 1 (cons 0 (number->leb-u8-list 32767)))))
 
   ;; Takes a library and returns a list of the corresponding Wasm module
   ;; bytes
@@ -992,15 +1014,14 @@
           (let ((exports (build-exports exports (cdr parsed-lib) 0))
                 (imports (gather-imports compiled-module))
                 (functions (resolve-calls compiled-module function-names)))
-            (append (append (append (wasm-header)
-                                    (wasm-type-section types))
+            (append (wasm-header)
+                    (append (wasm-type-section types)
                             (append (wasm-import-section imports)
-                                    ;; Function signatures happen after imports
-                                    (wasm-function-section (number-list functions
-                                                                        (length imports)))))
-                    (append (append (wasm-memory-section)
-                                    (wasm-export-section exports))
-                            (wasm-code-section functions))))))))
+                                    (append (wasm-function-section (number-list functions
+                                                                                (length imports)))
+                                            (append (wasm-memory-section)
+                                                    (append (wasm-export-section exports)
+                                                            (wasm-code-section functions))))))))))))
   (define (write-bytes ls)
     (if (null? ls)
         #t
