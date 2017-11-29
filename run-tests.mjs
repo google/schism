@@ -13,7 +13,7 @@ async function compileWithHostScheme(name) {
     console.log(`stdout: ${stdout}`);
     console.log(`stderr: ${stderr}`);
 
-    return util.promisify(fs.readFile)('out.wasm');    
+    return util.promisify(fs.readFile)('out.wasm');
 }
 
 // Uses host scheme to compile schism and returns the wasm bytes
@@ -42,6 +42,7 @@ async function runTest(name, compile = compileWithHostScheme) {
 	console.error(e.stack);
 	throw e;
     }
+    // console.info(result);
     assert.ok(result != false, "test failed");
 }
 
@@ -70,9 +71,17 @@ const compileWithWasmScheme = (async function() {
     };
 }());
 
-compileWithWasmScheme.then((compile) => {
-    runTests(compile).catch((e) => {
-	console.error(e.stack);
-	throw e;
+const use_host_compiler = true;
+if (use_host_compiler) {
+    runTests().catch((e) => {
+      console.error(e.stack);
+      throw e;
     });
-});
+} else {
+  compileWithWasmScheme.then((compile) => {
+    runTests(compile).catch((e) => {
+      console.error(e.stack);
+      throw e;
+    });
+  });
+}
