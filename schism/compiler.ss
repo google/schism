@@ -94,10 +94,11 @@
        (define (cadddr p) (car (cdr (cdr (cdr p)))))
        (define (cdaddr p) (cdr (car (cdr (cdr p)))))
        (define (assq x ls)
-         (if (eq? x (car ls))
-             ls
-             ;; TODO: check for errors!
-             (assq x (cdr ls))))
+         (if (pair? ls)
+             (if (eq? x (car ls))
+                 ls
+                 (assq x (cdr ls)))
+             (error 'assq "not a pair")))
        (define (length ls)
          (if (null? ls)
              0
@@ -973,8 +974,8 @@
   (define (wasm-memory-section)
     ;; For now we hardcode a memory
     (make-section 5 (make-vec 1
-                              ;; Memory with 256 pages and no maximum
-                              (cons 0 (number->leb-u8-list 256)))))
+                              ;; Memory with 8192 pages and no maximum
+                              (cons 0 (number->leb-u8-list 8192)))))
 
   ;; Takes a library and returns a list of the corresponding Wasm module
   ;; bytes
