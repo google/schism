@@ -32,7 +32,7 @@
   ;; ====================== ;;
 
   (define (trace-value x)
-    (display x) (newline)
+    (write x) (newline)
     x)
 
   (define (index-of-helper x ls index)
@@ -51,6 +51,12 @@
      `((%wasm-import "rt" (rt-add1 n))
        (%wasm-import "rt" (read-char))
        (%wasm-import "rt" (peek-char))
+       ;; display, newline, etc are all just enough to compile. We'll fill them in later.
+       (define (display x) x)
+       (define (write x) x)
+       (define (newline) #f)
+       ;; For error we read a large value so we'll probably get an out of bounds error.
+       (define (error where what) (%read-mem #xffffff #xffffff))
        (define (%base-pair) (%set-tag ,(allocation-pointer) ,(pair-tag)))
        (define (%symbol-table) (cdr (%base-pair)))
        (define (%alloc tag num-words)
@@ -70,10 +76,38 @@
          (read-ptr p 0))
        (define (cdr p)
          (read-ptr p ,(word-size)))
+       (define (caar p) (car (car p)))
+       (define (cadr p) (car (cdr p)))
+       (define (cdar p) (cdr (car p)))
+       (define (cddr p) (cdr (cdr p)))
+       (define (caaar p) (car (car (car p))))
+       (define (caadr p) (car (car (cdr p))))
+       (define (cadar p) (car (cdr (car p))))
+       (define (caddr p) (car (cdr (cdr p))))
+       (define (cdadr p) (cdr (car (cdr p))))
+       (define (cdddr p) (cdr (cdr (cdr p))))
+       (define (caaddr p) (car (car (cdr (cdr p)))))
+       (define (caddar p) (car (cdr (cdr (car p)))))
+       (define (cadadr p) (car (cdr (car (cdr p)))))
+       (define (cadddr p) (car (cdr (cdr (cdr p)))))
+       (define (cdaddr p) (cdr (car (cdr (cdr p)))))
+       (define (assq x ls)
+         (if (eq? x (car ls))
+             ls
+             ;; TODO: check for errors!
+             (assq x (cdr ls))))
+       (define (length ls)
+         (if (null? ls)
+             0
+             (+ 1 (length (cdr ls)))))
+       (define (append a b)
+         (if (null? a)
+             b
+             (cons (car a) (append (cdr a) b))))
        (define (read-ptr p offset)
          (%read-mem (%as-fixnum p) offset))
        (define (char->integer c)
-         (%as-fixnum c))             ;; TODO: check tag
+         (%as-fixnum c))              ;; TODO: check tag
        (define (char-between c c1 c2) ;; inclusive
          (if (char-ci<? c c1)
              #f
@@ -108,6 +142,10 @@
              (let ((x (cons s (%symbol-table))))
                (begin (set-cdr! (%base-pair) x)
                       (%set-tag x ,(symbol-tag))))))
+       (define (gensym t) ;; Creates a brand new symbol that cannot be reused
+         (let ((x (cons '() (%symbol-table))))
+           (begin (set-cdr! (%base-pair) x)
+                  (%set-tag x ,(symbol-tag)))))
        (define (symbol->string x)
          ;; TODO: typecheck
          (car (%set-tag x ,(pair-tag))))
@@ -121,6 +159,13 @@
                      #f))))
        (define (< a b)
          (if (< a b) #t #f))
+       (define (> a b)
+         (< b a))
+       (define (max a b)
+         (if (< a b) b a))
+       (define (bitwise-bit-field n start end)
+         (bitwise-and (bitwise-arithmetic-shift-right n start)
+                      (- (bitwise-arithmetic-shift-left 1 end) 1)))
        (define (read)
          (start-read (read-char)))
        (define (start-read c)
@@ -220,12 +265,23 @@
        (define (null? x)
          (eq? x '()))
        (define (pair? p)
-         (eq? (%get-tag p) ,(pair-tag))))))
+         (eq? (%get-tag p) ,(pair-tag)))
+       (define (boolean? p)
+         (or (eq? p #t) (eq? p #f)))
+       (define (number? p)
+         (eq? (%get-tag p) ,(fixnum-tag)))
+       (define (char? p)
+         (eq? (%get-tag p) ,(char-tag)))
+       (define (string? p)
+         (eq? (%get-tag p) ,(string-tag)))
+       (define (symbol? p)
+         (eq? (%get-tag p) ,(symbol-tag))))))
 
   (define (intrinsic? x)
     (or (eq? x '%read-mem) (eq? x '%store-mem) (eq? x '%get-tag)
         (eq? x '%set-tag) (eq? x '%as-fixnum) (eq? x 'bitwise-and)
-        (eq? x 'bitwise-not) (eq? x 'eof-object) (eq? x '+) (eq? x '*)
+        (eq? x 'bitwise-not) (eq? x 'bitwise-ior) (eq? x 'bitwise-arithmetic-shift-left)
+        (eq? x 'bitwise-arithmetic-shift-right) (eq? x 'eof-object) (eq? x '+) (eq? x '*)
         (eq? x '-) (eq? x 'set-car!) (eq? x 'set-cdr!)))
 
   ;; ====================== ;;
@@ -276,15 +332,12 @@
   (define (parse-expr expr)
     (cond
      ((null? expr) '(null))
-     ((number? expr)
-      (list 'number expr))
-     ((boolean? expr) (list 'bool expr))
-     ((char? expr)
-      (list 'char expr))
+     ((number? expr) `(number ,expr))
+     ((boolean? expr) `(bool ,expr))
+     ((char? expr) `(char ,expr))
      ((string? expr)
-      (list 'call 'list->string (parse-expr (list 'quote (string->list expr)))))
-     ((symbol? expr)
-      (list 'var expr))
+      `(call list->string ,(parse-expr (cons 'quote (cons (string->list expr) '())))))
+     ((symbol? expr) `(var ,expr))
      ((pair? expr)
       (let ((op (car expr)))
         (cond
@@ -296,11 +349,11 @@
           (let ((t (cadr expr))
                 (c (caddr expr))
                 (a (cadddr expr)))
-            (list 'if (parse-pred t) (parse-expr c) (parse-expr a))))
+            `(if ,(parse-pred t) ,(parse-expr c) ,(parse-expr a))))
          ((eq? op 'let)
           (let ((bindings (parse-bindings (cadr expr)))
                 (body (parse-expr (caddr expr))))
-            (list 'let bindings body)))
+            `(let ,bindings ,body)))
          ((eq? op 'begin)
           (cons 'begin (parse-exprs (cdr expr))))
          ((intrinsic? op)
@@ -313,25 +366,25 @@
       (error 'parse-expr "Unrecognized expression"))))
   (define (parse-pred expr)
     (cond
-     ((boolean? expr) (list 'bool expr))
+     ((boolean? expr) `(bool ,expr))
      ((pair? expr)
       (let ((op (car expr)))
         (cond
          ((eq? op 'eq?)
-          (list 'eq? (parse-expr (cadr expr)) (parse-expr (caddr expr))))
+          `(eq? ,(parse-expr (cadr expr)) ,(parse-expr (caddr expr))))
          ((eq? op '<)
-          (list '< (parse-expr (cadr expr)) (parse-expr (caddr expr))))
+          `(< ,(parse-expr (cadr expr)) ,(parse-expr (caddr expr))))
          (else
-          (list 'neq? (parse-expr expr) (parse-expr #f))))))
+          `(neq? ,(parse-expr expr) ,(parse-expr #f))))))
      (else
-      (list 'neq? (parse-expr expr) (parse-expr #f)))))
+      `(neq? ,(parse-expr expr) ,(parse-expr #f)))))
 
   (define (parse-bindings bindings)
     (if (null? bindings)
         '()
         (let ((var (caar bindings))
               (value (parse-expr (cadar bindings))))
-          (cons (list var value) (parse-bindings (cdr bindings))))))
+          (cons `(,var ,value) (parse-bindings (cdr bindings))))))
 
   (define (parse-body* body*)
     (if (null? body*)
@@ -348,7 +401,7 @@
         (let ((name (caadr function))
               (args (cdadr function))
               (body (parse-body (cddr function))))
-          (list (cons name args) body)))
+          `(,(cons name args) ,body)))
        ((eq? '%wasm-import type)
         function)
        (else
@@ -375,9 +428,9 @@
      ((symbol? expr)
       `(string->symbol ,(symbol->string expr)))
      ((pair? expr)
-      (if (and quasi (eq? (car expr) 'unquote))
+      (if (and quasi (eq? (car expr) 'unquote) (pair? (cdr expr)))
           (cadr expr)
-          (list 'cons (expand-quote (car expr) quasi) (expand-quote (cdr expr) quasi))))
+          `(cons ,(expand-quote (car expr) quasi) ,(expand-quote (cdr expr) quasi))))
      (else
       (error 'expand-quote "Invalid datum" expr))))
 
@@ -400,37 +453,36 @@
         fn
         (let ((def (car fn))
               (body (cadr fn)))
-          (list def (apply-representation-expr body)))))
+          `(,def ,(apply-representation-expr body)))))
   (define (apply-representation-expr expr)
     (let ((tag (car expr)))
       (cond
        ((eq? tag 'null)
-        (list 'ptr (constant-null)))
+        `(ptr ,(constant-null)))
        ((eq? tag 'bool)
-        (list 'ptr (if (cadr expr)
-                       (constant-true)
-                       (constant-false))))
+        `(ptr ,(if (cadr expr)
+                   (constant-true)
+                   (constant-false))))
        ((eq? tag 'char)
-        (list 'ptr (tag-constant (char->integer (cadr expr)) (char-tag))))
+        `(ptr ,(tag-constant (char->integer (cadr expr)) (char-tag))))
        ((eq? tag 'begin)
         (cons 'begin (apply-representation-expr* (cdr expr))))
        ((eq? tag 'var) expr)
-       ((eq? tag 'number) (list 'ptr (bitwise-arithmetic-shift-left (cadr expr) (tag-size))))
-       ((eq? tag 'eof-object) (list 'ptr (constant-eof)))
+       ((eq? tag 'number) `(ptr ,(bitwise-arithmetic-shift-left (cadr expr) (tag-size))))
+       ((eq? tag 'eof-object) `(ptr ,(constant-eof)))
        ((eq? tag 'call)
         (cons 'call (cons (cadr expr) (apply-representation-expr* (cddr expr)))))
        ((eq? tag 'if)
         (let ((t (cadr expr))
               (c (caddr expr))
               (a (cadddr expr)))
-          (list 'if
-                (apply-representation-pred t)
-                (apply-representation-expr c)
-                (apply-representation-expr a))))
+          `(if
+            ,(apply-representation-pred t)
+            ,(apply-representation-expr c)
+            ,(apply-representation-expr a))))
        ((eq? tag 'let)
-        (list 'let
-              (apply-representation-bindings (cadr expr))
-              (apply-representation-expr (caddr expr))))
+        `(let ,(apply-representation-bindings (cadr expr))
+           ,(apply-representation-expr (caddr expr))))
        ((intrinsic? tag)
         (cons tag (apply-representation-expr* (cdr expr))))
        (else
@@ -443,16 +495,16 @@
   (define (apply-representation-pred pred)
     (let ((tag (car pred)))
       (cond
-       ((eq? tag 'zero?) (list 'zero? (apply-representation-expr (cadr pred))))
-       ((eq? tag 'eq?) (list 'eq?
-                             (apply-representation-expr (cadr pred))
-                             (apply-representation-expr (caddr pred))))
-       ((eq? tag '<) (list '<
-                           (apply-representation-expr (cadr pred))
-                           (apply-representation-expr (caddr pred))))
-       ((eq? tag 'neq?) (list 'neq?
-                              (apply-representation-expr (cadr pred))
-                              (apply-representation-expr (caddr pred))))
+       ((eq? tag 'zero?) `(zero? ,(apply-representation-expr (cadr pred))))
+       ((eq? tag 'eq?) `(eq?
+                         ,(apply-representation-expr (cadr pred))
+                         ,(apply-representation-expr (caddr pred))))
+       ((eq? tag '<) `(<
+                       ,(apply-representation-expr (cadr pred))
+                       ,(apply-representation-expr (caddr pred))))
+       ((eq? tag 'neq?) `(neq?
+                          ,(apply-representation-expr (cadr pred))
+                          ,(apply-representation-expr (caddr pred))))
        ((eq? tag 'bool) pred)
        (else
         (display pred) (newline)
@@ -460,8 +512,8 @@
   (define (apply-representation-bindings bindings)
     (if (null? bindings)
         '()
-        (cons (list (caar bindings)
-                    (apply-representation-expr (cadar bindings)))
+        (cons `(,(caar bindings)
+                ,(apply-representation-expr (cadar bindings)))
               (apply-representation-bindings (cdr bindings)))))
 
   ;; ====================== ;;
@@ -478,18 +530,18 @@
        ((eq? tag 'begin) (cons 'begin (compile-exprs (cdr expr) env)))
        ((eq? tag 'number) (cons 'i32.const (cdr expr)))
        ((eq? tag 'ptr) (cons 'i32.const (cdr expr)))
-       ((eq? tag 'var) (list 'get-local (cdr (assq (cadr expr) env))))
+       ((eq? tag 'var) `(get-local ,(cdr (assq (cadr expr) env))))
        ((eq? tag 'call) (cons 'call (cons (cadr expr) (compile-exprs (cddr expr) env))))
        ((eq? tag 'if)
         (let ((t (cadr expr))
               (c (caddr expr))
               (a (cadddr expr)))
-          (list 'if (compile-pred t env) (compile-expr c env) (compile-expr a env))))
+          `(if ,(compile-pred t env) ,(compile-expr c env) ,(compile-expr a env))))
        ((eq? tag 'let)
         (let ((index (length env)))
-          (list 'begin
-                (compile-bindings (cadr expr) env index)
-                (compile-expr (caddr expr) (bindings->env (cadr expr) env index)))))
+          `(begin
+             ,(compile-bindings (cadr expr) env index)
+             ,(compile-expr (caddr expr) (bindings->env (cadr expr) env index)))))
        ((eq? tag 'set-car!)
         (let ((p (compile-expr (cadr expr) env))
               (x (compile-expr (caddr expr) env)))
@@ -528,30 +580,36 @@
         (cons 'i32.and (compile-exprs (cdr expr) env)))
        ((eq? tag 'bitwise-not)
         (cons 'i32.not (compile-exprs (cdr expr) env)))
+       ((eq? tag 'bitwise-ior)
+        (cons 'i32.or (compile-exprs (cdr expr) env)))
+       ((eq? tag 'bitwise-arithmetic-shift-left)
+        (cons 'i32.shl (compile-exprs (cdr expr) env)))
+       ((eq? tag 'bitwise-arithmetic-shift-right)
+        (cons 'i32.shr_s (compile-exprs (cdr expr) env)))
        (else (display expr) (newline) (error 'compile-expr "Unrecognized expression")))))
   (define (compile-pred expr env)
     (let ((op (car expr)))
       (cond
        ((eq? op 'zero?)
-        (list 'i32.eqz (compile-expr (cadr expr) env)))
+        `(i32.eqz ,(compile-expr (cadr expr) env)))
        ((eq? op 'eq?)
-        (list 'i32.eq
-              (compile-expr (cadr expr) env)
-              (compile-expr (caddr expr) env)))
+        `(i32.eq
+          ,(compile-expr (cadr expr) env)
+          ,(compile-expr (caddr expr) env)))
        ((eq? op 'neq?)
-        (list 'i32.ne
-              (compile-expr (cadr expr) env)
-              (compile-expr (caddr expr) env)))
+        `(i32.ne
+          ,(compile-expr (cadr expr) env)
+          ,(compile-expr (caddr expr) env)))
        ((eq? op '<)
-        (list 'i32.lt_s
-              (compile-expr (cadr expr) env)
-              (compile-expr (caddr expr) env)))
+        `(i32.lt_s
+          ,(compile-expr (cadr expr) env)
+          ,(compile-expr (caddr expr) env)))
        ((eq? op 'bool)
        	;; Since we're in pred context, bools get translated into
         ;; things that go directly into if.
         (if (cadr expr)
-            (list 'i32.const 1)
-            (list 'i32.const 0)))
+            '(i32.const 1)
+            '(i32.const 0)))
        (else
         (display expr) (newline)
         (error 'compile-pred "Unrecognized predicate")))))
@@ -562,21 +620,20 @@
         (cons (cons (caar bindings) index)
               (bindings->env (cdr bindings) env (+ 1 index)))))
   (define (compile-binding binding env index)
-    (list 'set-local index (compile-expr (cadr binding) env)))
+    `(set-local ,index ,(compile-expr (cadr binding) env)))
   (define (compile-bindings bindings env index)
     (if (null? (cdr bindings))
         (compile-binding (car bindings) env index)
-        (list 'begin
-              (compile-binding (car bindings) env index)
-              (compile-bindings (cdr bindings) env (+ 1 index)))))
+        `(begin
+           ,(compile-binding (car bindings) env index)
+           ,(compile-bindings (cdr bindings) env (+ 1 index)))))
   (define (compile-function fn)
     (if (eq? (car fn) '%wasm-import)
         fn
         (let ((args (number-variables (cdar fn) 0)))
           (let ((body (compile-expr (cadr fn) args)))
-            (list
-             (- (count-locals body) (length args)) ;; Number of local variables
-             body)))))
+            `(,(- (count-locals body) (length args)) ;; Number of local variables
+              ,body)))))
 
   ;; Determines how many instructions were used in a body.
   (define (count-locals body)
@@ -613,7 +670,7 @@
     (let ((args (if (eq? (car fn) '%wasm-import)
                     (args->types (cdaddr fn))
                     (args->types (cdar fn)))))
-      (cons 'fn (list args '(i32)))))
+      `(fn ,args (i32))))
   (define (functions->types fns)
     (if (null? fns)
         '()
@@ -641,7 +698,7 @@
               (rest (replace-export (cdr exports) name index)))
           (if (or (pair? ex) (not (eq? ex name)))
               (cons ex rest)
-              (cons (list 'fn index (symbol->string name)) rest)))))
+              (cons `(fn ,index ,(symbol->string name)) rest)))))
 
   (define (build-exports exports functions index)
     (if (null? functions)
@@ -671,7 +728,7 @@
       (cond
        ((eq? tag 'i32.const) expr)
        ((eq? tag 'get-local) expr)
-       ((eq? tag 'set-local) (list 'set-local (cadr expr) (resolve-calls-expr (caddr expr) env)))
+       ((eq? tag 'set-local) `(set-local ,(cadr expr) ,(resolve-calls-expr (caddr expr) env)))
        ((eq? tag 'begin) (cons 'begin (resolve-calls-exprs (cdr expr) env)))
        ((eq? tag 'call) (cons 'call (cons (index-of (cadr expr) env)
                                           (resolve-calls-exprs (cddr expr) env))))
@@ -680,19 +737,19 @@
         (let ((t (cadr expr))
               (c (caddr expr))
               (a (cadddr expr)))
-          (list 'if
-                (resolve-calls-expr t env)
-                (resolve-calls-expr c env)
-                (resolve-calls-expr a env))))
+          `(if
+            ,(resolve-calls-expr t env)
+            ,(resolve-calls-expr c env)
+            ,(resolve-calls-expr a env))))
        ((eq? tag 'i32.store)
         (let ((offset (cadr expr))
               (index (resolve-calls-expr (caddr expr) env))
               (value (resolve-calls-expr (cadddr expr) env)))
-          (list 'i32.store offset index value)))
+          `(i32.store ,offset ,index ,value)))
        ((eq? tag 'i32.load)
         (let ((offset (cadr expr))
               (index (resolve-calls-expr (caddr expr) env)))
-          (list 'i32.load offset index)))
+          `(i32.load ,offset ,index)))
        ((wasm-simple-op? tag)
         (let ((args (resolve-calls-exprs (cdr expr) env)))
           (cons tag args)))
@@ -700,7 +757,7 @@
         (display expr) (newline)
         (error 'resolve-calls-expr "Unrecognized expression")))))
   (define (resolve-calls-fn function env)
-    (list (car function) (resolve-calls-expr (cadr function) env)))
+    `(,(car function) ,(resolve-calls-expr (cadr function) env)))
   (define (resolve-calls functions env)
     (if (null? functions)
         '()
@@ -717,7 +774,7 @@
               (let ((module (cadr entry))
                     (name (symbol->string (caaddr entry)))
                     (type (function->type entry)))
-                (cons (list module name type) rest))
+                (cons `(,module ,name ,type) rest))
               rest))))
 
   ;; ====================== ;;
@@ -725,8 +782,8 @@
   ;; ====================== ;;
 
   (define (number->leb-u8-list n)
-    (if (and (< n #x40) (> n (- #x40)))
-        (list (bitwise-and n #x7f))
+    (if (and (< n #x40) (> n (- 0 #x40)))
+        `(,(bitwise-and n #x7f))
         (cons (bitwise-ior #x80 (bitwise-bit-field n 0 7))
               (number->leb-u8-list (bitwise-arithmetic-shift-right n 7)))))
 
@@ -740,7 +797,7 @@
       (make-vec (length chars) (encode-chars chars))))
 
   (define (wasm-header)
-    (list #x00 #x61 #x73 #x6d #x01 #x00 #x00 #x00))
+    '(#x00 #x61 #x73 #x6d #x01 #x00 #x00 #x00))
 
   (define (make-vec length contents)
     (append (number->leb-u8-list length) contents))
@@ -780,7 +837,8 @@
   (define (encode-import import index)
     (let ((module (car import))
           (name (cadr import)))
-      (append (encode-string module) (encode-string name) '(#x00) (number->leb-u8-list index))))
+      (append (append (encode-string module) (encode-string name))
+              (append '(#x00) (number->leb-u8-list index)))))
 
   (define (encode-u32-vec-contents nums)
     (if (null? nums)
@@ -796,7 +854,10 @@
   (define (encode-export export)
     (cond
      ((eq? (car export) 'fn)
-      (append (encode-string (caddr export)) (cons #x00 (number->leb-u8-list (cadr export)))))))
+      (append (encode-string (caddr export)) (cons #x00 (number->leb-u8-list (cadr export)))))
+     (else
+      (trace-value export)
+      (error 'encode-export "Unrecognized export"))))
 
   (define (encode-export-contents exports)
     (if (null? exports)
@@ -812,7 +873,7 @@
         (append (encode-expr (car exprs)) (encode-exprs (cdr exprs)))))
 
   (define (encode-simple-op op expr)
-    (append (encode-exprs (cdr expr)) (list op)))
+    (append (encode-exprs (cdr expr)) `(,op)))
 
   (define (encode-expr expr)
     (let ((tag (car expr)))
@@ -822,7 +883,7 @@
        ((eq? tag 'i32.const)
         (cons #x41 (number->leb-u8-list (cadr expr))))
        ((eq? tag 'i32.eqz)
-        (append (encode-expr (cadr expr)) (list #x45)))
+        (append (encode-expr (cadr expr)) '(#x45)))
        ((eq? tag 'i32.eq)
         (encode-simple-op #x46 expr))
        ((eq? tag 'i32.ne)
@@ -841,25 +902,27 @@
               (c (caddr expr))
               (a (cadddr expr)))
           ;; For now, if blocks are assumed to always return i32
-          (append (encode-expr t)
-                  (list #x04 #x7f) (encode-expr c)
-                  (list #x05) (encode-expr a)
-                  (list #x0b))))
+          (append (append (encode-expr t)
+                          '(#x04 #x7f))
+                  (append (append (encode-expr c)
+                                  '(#x05))
+                          (append (encode-expr a)
+                                  '(#x0b))))))
        ((eq? tag 'i32.store)
         (let ((align 0)
               (offset (cadadr expr))
               (index (encode-expr (caddr expr)))
               (value (encode-expr (cadddr expr))))
-          (append index value
-                  (list #x36 #x0) ;;always use 0 alignment
-                  (number->leb-u8-list offset))))
+          (append (append index value)
+                  (append '(#x36 #x0) ;;always use 0 alignment
+                          (number->leb-u8-list offset)))))
        ((eq? tag 'i32.load)
         (let ((align 0)
               (offset (cadadr expr))
               (index (encode-expr (caddr expr))))
           (append index
-                  (list #x28 #x0) ;;always use 0 alignment
-                  (number->leb-u8-list offset))))
+                  (append '(#x28 #x0) ;;always use 0 alignment
+                          (number->leb-u8-list offset)))))
        ((eq? tag 'i32.add)
         (encode-simple-op #x6a expr))
        ((eq? tag 'i32.sub)
@@ -884,9 +947,9 @@
     (let ((contents (append
                      (if (zero? locals)
                          (make-vec 0 '())
-                         (make-vec 1 (append (number->leb-u8-list locals) (list #x7f))))
-                     (encode-expr body)
-                     '(#x0b))))
+                         (make-vec 1 (append (number->leb-u8-list locals) '(#x7f))))
+                     (append (encode-expr body)
+                             '(#x0b)))))
       (make-vec (length contents) contents)))
 
   (define (encode-codes codes)
@@ -917,12 +980,13 @@
           (let ((exports (build-exports exports (cdr parsed-lib) 0))
                 (imports (gather-imports compiled-module))
                 (functions (resolve-calls compiled-module function-names)))
-            (let ((module (append (wasm-header)
-                                  (wasm-type-section types)
-                                  (wasm-import-section imports)
-                                  ;; Function signatures happen after imports
-                                  (wasm-function-section (number-list functions (length imports)))
-                                  (wasm-memory-section)
-                                  (wasm-export-section exports)
-                                  (wasm-code-section functions))))
-              (u8-list->bytevector module))))))))
+            (let ((module (append (append (wasm-header)
+                                          (wasm-type-section types))
+                                  (append (wasm-import-section imports)
+                                          ;; Function signatures happen after imports
+                                          (wasm-function-section (number-list functions
+                                                                              (length imports))))
+                                  (append (append (wasm-memory-section)
+                                                  (wasm-export-section exports))
+                                          (wasm-code-section functions)))))
+              module)))))))
