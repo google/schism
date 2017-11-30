@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+  <head>
+
+  </head>
+  <textarea id="src" cols=80 rows=20>
+(library
+    (trivial)
+  (export main)
+  (import (rnrs))
+
+  (define (fact n)
+    (if (zero? n)
+        1
+        (* n (fact (- n 1)))))
+
+  (define (main)
+    (fact 5)))
+  </textarea>
+  <button id="go">Go</button>
+  <pre id="result"></pre>
+  <script type="module" src="playground.js" crossorigin="use-credentials"></script>
+</html>
