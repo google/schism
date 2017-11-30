@@ -3,6 +3,13 @@
 (import (rnrs)
 	(schism compiler))
 
+(define (flatten-compiled-bytes bytes tail)
+  (if (null? bytes)
+      tail
+      (if (pair? bytes)
+          (flatten-compiled-bytes (car bytes) (flatten-compiled-bytes (cdr bytes) tail))
+          (cons bytes tail))))
+
 (if (eq? (length (command-line)) 2)
     (let ((input-file-name (cadr (command-line))))
       (let ((source (read (open-file-input-port input-file-name
@@ -11,5 +18,5 @@
                                                 (native-transcoder)))))
         (put-bytevector
          (open-file-output-port "out.wasm" (file-options no-fail))
-         (u8-list->bytevector (compile-library source)))))
+         (u8-list->bytevector (flatten-compiled-bytes (compile-library source) '())))))
     (display "usage: schism.ss <filename>"))

@@ -20,7 +20,7 @@ async function runSchism() {
 
   js_from_scheme(instance.exports['compile-stdin->stdout']());
 
-  console.info(output_data);
+  //console.info(output_data);
 }
 
 runSchism().catch((e) => {
