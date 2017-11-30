@@ -685,7 +685,6 @@
         '()
         (let ((type (function->type (car fns))))
           (cons type (functions->types (cdr fns))))))
-
   (define (function->name fn)
     (if (eq? (car fn) '%wasm-import)
         (caaddr fn)
@@ -773,7 +772,6 @@
         (if (eq? (caar functions) '%wasm-import)
             (resolve-calls (cdr functions) env)
             (cons (resolve-calls-fn (car functions) env) (resolve-calls (cdr functions) env)))))
-
   (define (gather-imports compiled-module)
     (if (null? compiled-module)
         '()
@@ -795,12 +793,10 @@
         `(,(bitwise-and n #x7f))
         (cons (bitwise-ior #x80 (bitwise-and n 127))
               (number->leb-u8-list (bitwise-arithmetic-shift-right n 7)))))
-
   (define (encode-chars chars)
     (if (null? chars)
         '()
         (cons (char->integer (car chars)) (encode-chars (cdr chars)))))
-
   (define (encode-string s)
     (let ((chars (string->list s)))
       (make-vec (length chars) (encode-chars chars))))
@@ -859,7 +855,6 @@
     (if (null? nums)
         '()
         (cons (number->leb-u8-list (car nums)) (encode-u32-vec-contents (cdr nums)))))
-
   (define (encode-u32-vec nums)
     (make-vec (length nums) (encode-u32-vec-contents nums)))
 
@@ -873,12 +868,10 @@
      (else
       (let ((_ (trace-value export)))
         (error 'encode-export "Unrecognized export")))))
-
   (define (encode-export-contents exports)
     (if (null? exports)
         '()
         (cons (encode-export (car exports)) (encode-export-contents (cdr exports)))))
-
   (define (wasm-export-section exports)
     (make-section 7 (make-vec (length exports) (encode-export-contents exports))))
 
@@ -962,12 +955,10 @@
                      (cons (encode-expr body)
                            '(#x0b)))))
       (make-vec (byte-count contents) contents)))
-
   (define (encode-codes codes)
     (if (null? codes)
         '()
         (cons (encode-code (caar codes) (cadar codes)) (encode-codes (cdr codes)))))
-
   (define (wasm-code-section codes)
     (make-section 10 (make-vec (length codes) (encode-codes codes))))
 
