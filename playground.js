@@ -17,7 +17,7 @@ async function compileSchism() {
 const compiler = compileSchism();
 
 async function compileAndRun() {
-  const src = document.getElementById('src').innerHTML;
+  const src = document.getElementById('src').value;
   console.info(`Compiling program: '${src}'`);
   const schism = await compiler;
   const compile = schism.exports['compile-stdin->stdout'];
