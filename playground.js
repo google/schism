@@ -8,7 +8,7 @@ import { rt, js_from_scheme, set_current_input_port, output_data } from "./rt/rt
 //}
 
 async function compileSchism() {
-  let bytes = (await fetch('schism-stage0.wasm')).arrayBuffer();
+  let bytes = (await fetch('schism-stage0.wasm', { credentials: 'include' })).arrayBuffer();
   let result = await WebAssembly.instantiate(await bytes, { 'rt': rt });
   console.info("Loading Schism Complete");
   return result.instance;
