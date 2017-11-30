@@ -5,7 +5,7 @@ import fs from 'fs';
 import util from 'util';
 
 async function runSchism() {
-  const file = fs.readFileSync('out.wasm');
+  const file = fs.readFileSync('schism-stage0.wasm');
   const wasm = new WebAssembly.Module(file);
 
   // set up the input port

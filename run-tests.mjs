@@ -58,19 +58,23 @@ async function runTests(compile = compileWithHostScheme) {
     }
 }
 
+async function createSchismFromWasm(schism_bytes) {
+  return async function(name) {
+    const schism = await WebAssembly.instantiate(schism_bytes, { 'rt': rt });
+    set_current_input_port(fs.readFileSync(name));
+    output_data.length = 0;
+    schism.instance.exports['compile-stdin->stdout']();
+
+    const compiled_bytes = new Uint8Array(output_data);
+    fs.writeFileSync('out.wasm', compiled_bytes);
+    return compiled_bytes;
+  };
+}
+
+const use_stage0 = true;
 const compileWithWasmScheme = (async function() {
-    const schism_bytes = await compileBootstrap();
-
-    return async function(name) {
-	const schism = await WebAssembly.instantiate(schism_bytes, { 'rt': rt });
-	set_current_input_port(fs.readFileSync(name));
-	output_data.length = 0;
-	schism.instance.exports['compile-stdin->stdout']();
-
-	const compiled_bytes = new Uint8Array(output_data);
-	fs.writeFileSync('out.wasm', compiled_bytes);
-	return compiled_bytes;
-    };
+  const schism_bytes = use_stage0 ? fs.readFileSync('schism-stage0.wasm') : await compileBootstrap();
+  return createSchismFromWasm(schism_bytes);
 }());
 
 const use_host_compiler = false;
