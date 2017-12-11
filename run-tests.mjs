@@ -7,7 +7,7 @@ import fs from 'fs';
 import util from 'util';
 
 const OPTIONS = {
-    use_snapshot: false, // load schism-stage0.wasm if true instead of
+    use_snapshot: true, // load schism-stage0.wasm if true instead of
                         // building with host scheme
 
     // which stages to build and run tests for
