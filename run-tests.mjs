@@ -1,5 +1,5 @@
 // -*- javascript -*-
-import { rt, js_from_scheme, set_current_input_port, output_data } from './rt/rt';
+import * as Schism from './rt/rt';
 
 import assert from 'assert';
 import child_process from 'child_process';
@@ -22,30 +22,28 @@ async function compileBootstrap() {
 }
 
 async function runTest(name, compile = compileWithHostScheme) {
-  const file = await compile(name);
-  const wasm = new WebAssembly.Module(file);
+    const file = await compile(name);
 
-  // set up the input port
-  const input_file = name.replace(".ss", ".input");
-  if (fs.existsSync(input_file)) {
-    set_current_input_port(fs.readFileSync(input_file));
-  } else {
-    set_current_input_port([]);
-  }
+    const engine = new Schism.Engine;
+    const wasm = await engine.loadWasmModule(file);
 
-  const instance = await WebAssembly.instantiate(wasm, { 'rt': rt });
+    // set up the input port
+    const input_file = name.replace(".ss", ".input");
+    if (fs.existsSync(input_file)) {
+	engine.setCurrentInputPort(fs.readFileSync(input_file));
+    }
 
-  let raw_result;
-  let result;
-  try {
-    raw_result = instance.exports['do-test']();
-    result = js_from_scheme(raw_result);
-  } catch (e) {
-    console.error(e.stack);
-    throw e;
-  }
-  //console.info(raw_result);
-  assert.ok(result != false, "test failed");
+    let raw_result;
+    let result;
+    try {
+	raw_result = wasm.exports['do-test']();
+	result = engine.jsFromScheme(raw_result);
+    } catch (e) {
+	console.error(e.stack);
+	throw e;
+    }
+    //console.info(raw_result);
+    assert.ok(result != false, "test failed");
 }
 
 async function runTests(compile = compileWithHostScheme) {
@@ -59,16 +57,17 @@ async function runTests(compile = compileWithHostScheme) {
 }
 
 async function createSchismFromWasm(schism_bytes) {
-  return async function(name) {
-    const schism = await WebAssembly.instantiate(schism_bytes, { 'rt': rt });
-    set_current_input_port(fs.readFileSync(name));
-    output_data.length = 0;
-    schism.instance.exports['compile-stdin->stdout']();
+    return async function(name) {
+	let engine = new Schism.Engine;
+	let schism = await engine.loadWasmModule(schism_bytes);
+	engine.setCurrentInputPort(fs.readFileSync(name));
+	engine.clearOutputBuffer();
+	schism.exports['compile-stdin->stdout']();
 
-    const compiled_bytes = new Uint8Array(output_data);
-    fs.writeFileSync('out.wasm', compiled_bytes);
-    return compiled_bytes;
-  };
+	const compiled_bytes = new Uint8Array(engine.output_data);
+	fs.writeFileSync('out.wasm', compiled_bytes);
+	return compiled_bytes;
+    };
 }
 
 const use_stage0 = true;

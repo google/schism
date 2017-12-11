@@ -34,7 +34,7 @@ const CONSTANTS = {
 }
 
 // Convert a Scheme ptr into a corresponding JavaScript value
-export function js_from_scheme(ptr) {
+function js_from_scheme(ptr) {
     switch (extract_tag(ptr)) {
     case TAGS.fixnum:
 	return ptr >> TAG_SIZE; // sign extending shift so negatives work.
@@ -49,35 +49,77 @@ function fixnum_from_number(n) {
   return n << TAG_SIZE;
 }
 
-let input_port_data = []
-let input_index = 0;
-
-export function set_current_input_port(data) {
-  input_port_data = data;
-  input_index = 0;
+function rt(engine) {
+    function peek() {
+	if (engine.input_index < engine.input_port_data.length) {
+	    const val = engine.input_port_data[engine.input_index];
+	    return tag_constant(val, TAGS.character);
+	}
+	return CONSTANTS.eof;	
+    }
+    
+    return {
+	'rt-add1': function(ptr) {
+	    // This is a trivial function that is mostly used to test function imports.
+	    return fixnum_from_number(js_from_scheme(ptr) + 1);
+	},
+	'read-char': function() {
+	    const val = peek();
+	    if (peek != CONSTANTS.eof) {
+		engine.input_index++;
+	    }
+	    return val;
+	},
+	'peek-char': peek,
+	'write-char': function(ptr) {
+	    const byte = js_from_scheme(ptr).charCodeAt(0);
+	    engine.output_data.push(byte);
+	}
+    }
 }
 
-export let output_data = []
-
-export const rt = {
-    'rt-add1': function(ptr) {
-	// This is a trivial function that is mostly used to test function imports.
-	return fixnum_from_number(js_from_scheme(ptr) + 1);
-    },
-    'read-char': function() {
-	if (input_index < input_port_data.length) {
-	    return tag_constant(input_port_data[input_index++], TAGS.character);
-	}
-	return CONSTANTS.eof;
-    },
-    'peek-char': function() {
-	if (input_index < input_port_data.length) {
-	    return tag_constant(input_port_data[input_index], TAGS.character);
-	}
-	return CONSTANTS.eof;
-    },
-    'write-char': function(ptr) {
-	const byte = js_from_scheme(ptr).charCodeAt(0);
-	output_data.push(byte);
+class Module {
+    get exports() {
+	return this.wasm_instance.exports;
     }
-};
+}
+
+export class Engine {
+    constructor() {
+	this.memory = new WebAssembly.Memory({initial: 16384});
+	this.rt = rt(this);
+	this.input_port_data = [];
+	this.input_index = 0;
+	this.output_data = [];
+	this.modules = [];
+    }
+
+    async loadWasmModule(bytes) {
+	const import_object = {
+	    'rt': this.rt,
+	    'memory': this.memory
+	};
+
+	const result = await WebAssembly.instantiate(bytes, import_object);
+
+	let schism_module = new Module();
+	schism_module.wasm_instance = result.instance;
+	schism_module.engine = this;
+	this.modules.push(schism_module);
+
+	return schism_module;
+    }
+    
+    setCurrentInputPort(data) {
+	this.input_port_data = data;
+	this.input_index = 0;
+    }
+
+    clearOutputBuffer() {
+	this.output_data.length = 0;
+    }
+
+    jsFromScheme(ptr) {
+	return js_from_scheme(ptr);
+    }
+}
