@@ -70,7 +70,7 @@ async function createSchismFromWasm(schism_bytes) {
     };
 }
 
-const use_stage0 = true;
+const use_stage0 = false;
 const compileWithWasmScheme = (async function() {
   const schism_bytes = use_stage0 ? fs.readFileSync('schism-stage0.wasm') : await compileBootstrap();
   return createSchismFromWasm(schism_bytes);

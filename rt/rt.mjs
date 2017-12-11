@@ -97,7 +97,7 @@ export class Engine {
     async loadWasmModule(bytes) {
 	const import_object = {
 	    'rt': this.rt,
-	    'memory': this.memory
+	    'memory': { 'memory': this.memory }
 	};
 
 	const result = await WebAssembly.instantiate(bytes, import_object);

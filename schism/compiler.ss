@@ -839,17 +839,23 @@
     (make-section 1 (encode-type-vec types)))
 
   (define (wasm-import-section imports)
-    (make-section 2 (make-vec (length imports) (encode-imports imports 0))))
+    ;; Add 1 to the length because we import a memory too.
+    (make-section 2 (make-vec (+ (length imports) 1) (encode-imports imports 0))))
   (define (encode-imports imports index)
     (if (null? imports)
-        '()
+        (encode-memory-import)
         (cons (encode-import (car imports) index) (encode-imports (cdr imports) (+ 1 index)))))
   (define (encode-import import index)
     (let ((module (car import))
           (name (cadr import)))
       (cons (encode-string module)
               (cons (encode-string name)
-                      (cons '(#x00) (number->leb-u8-list index))))))
+		    (cons '(#x00) (number->leb-u8-list index))))))
+  (define (encode-memory-import)
+    (cons (encode-string "memory")
+	  (cons (encode-string "memory")
+		;; Import a memory with at least 1 page and no maximum.
+		'(#x02 #x00 #x01))))
 
   (define (encode-u32-vec-contents nums)
     (if (null? nums)
@@ -962,10 +968,6 @@
   (define (wasm-code-section codes)
     (make-section 10 (make-vec (length codes) (encode-codes codes))))
 
-  (define (wasm-memory-section)
-    ;; For now we hardcode a memory with 32767 pages and no maximum
-    (make-section 5 (make-vec 1 (cons 0 (number->leb-u8-list 32767)))))
-
   ;; Takes a library and returns a list of the corresponding Wasm module
   ;; bytes
   (define (compile-library library)
@@ -985,9 +987,8 @@
                         (cons (wasm-import-section imports)
                               (cons (wasm-function-section (number-list functions
                                                                         (length imports)))
-                                    (cons (wasm-memory-section)
-                                          (cons (wasm-export-section exports)
-                                                (wasm-code-section functions))))))))))))
+                                    (cons (wasm-export-section exports)
+					  (wasm-code-section functions)))))))))))
   (define (write-bytes ls)
     (cond
      ((null? ls) #t)
