@@ -7,7 +7,7 @@ import fs from 'fs';
 import util from 'util';
 
 const OPTIONS = {
-    use_snapshot: true, // load schism-stage0.wasm if true instead of
+    use_snapshot: false, // load schism-stage0.wasm if true instead of
                         // building with host scheme
 
     // which stages to build and run tests for
@@ -21,9 +21,6 @@ const OPTIONS = {
 async function compileWithHostScheme(name) {
     const { stdout, stderr } = await util.promisify(child_process.exec)(`./schism.ss ${name}`);
 
-    //console.log(`stdout: ${stdout}`);
-    //console.log(`stderr: ${stderr}`);
-
     return util.promisify(fs.readFile)('out.wasm');
 }
 
@@ -33,7 +30,8 @@ async function compileBootstrap() {
 }
 
 async function runTest(name, compile = compileWithHostScheme) {
-    const file = await compile(name);
+    const bytes = fs.readFileSync(name);
+    const file = await compile(bytes);
 
     const engine = new Schism.Engine;
     const wasm = await engine.loadWasmModule(file);
@@ -53,7 +51,6 @@ async function runTest(name, compile = compileWithHostScheme) {
 	console.error(e.stack);
 	throw e;
     }
-    //console.info(raw_result);
     assert.ok(result != false, "test failed");
 }
 
