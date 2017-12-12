@@ -49,10 +49,18 @@ function fixnum_from_number(n) {
   return n << TAG_SIZE;
 }
 
+class SchemeError extends Error {
+    constructor(where, what) {
+	this.where = where
+	this.what = what
+    }
+}
+
 function rt(engine) {
     function peek() {
 	if (engine.input_index < engine.input_port_data.length) {
 	    const val = engine.input_port_data[engine.input_index];
+	    //console.info(val);
 	    return tag_constant(val, TAGS.character);
 	}
 	return CONSTANTS.eof;	
@@ -68,12 +76,16 @@ function rt(engine) {
 	    if (peek != CONSTANTS.eof) {
 		engine.input_index++;
 	    }
+	    console.info(`read-char: ${engine.jsFromScheme(val)}`);
 	    return val;
 	},
 	'peek-char': peek,
 	'write-char': function(ptr) {
 	    const byte = js_from_scheme(ptr).charCodeAt(0);
 	    engine.output_data.push(byte);
+	},
+	'error': function(where, what) {
+	    throw new SchemeError(engine.jsFromScheme(where), engine.jsFromScheme(what));
 	}
     }
 }

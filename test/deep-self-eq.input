@@ -1,4 +1,8 @@
 (library (schism compiler)
+
+;; This is a large file forked from the compiler to stress test
+;; recursion over a lot of data structures.
+
   (export compile-library compile-stdin->stdout)
   (import (rnrs)
           (only (chezscheme) gensym))
@@ -43,21 +47,22 @@
             (index-of-helper x (cdr ls) (+ 1 index)))
         (let ((_ (display x)))
           (let ((_ (newline)))
-              (error 'index-of "Could not find item")))))
+              (error 'index-of )))))
   (define (index-of x ls)
     (index-of-helper x ls 0))
 
   (define (primitives)
     (expand-macros
-     `((%wasm-import "rt" (rt-add1 n))
-       (%wasm-import "rt" (read-char))
-       (%wasm-import "rt" (peek-char))
-       (%wasm-import "rt" (write-char c))
-       (%wasm-import "rt" (error where what))
+     `((%wasm-import  (rt-add1 n))
+       (%wasm-import  (read-char))
+       (%wasm-import  (peek-char))
+       (%wasm-import  (write-char c))
        ;; display, newline, etc are all just enough to compile. We'll fill them in later.
        (define (display x) x)
        (define (write x) x)
        (define (newline) #f)
+       ;; For error we read a large value so we'll probably get an out of bounds error.
+       (define (error where what) (%read-mem #xffffff #xffffff))
        (define (%base-pair) (%set-tag ,(allocation-pointer) ,(pair-tag)))
        (define (%symbol-table) (cdr (%base-pair)))
        (define (%alloc tag num-words)
@@ -97,7 +102,7 @@
              (if (eq? x (caar ls))
                  (car ls)
                  (assq x (cdr ls)))
-             (error 'assq "not a pair")))
+             (error 'assq )))
        (define (length ls)
          (if (null? ls)
              0
@@ -292,7 +297,7 @@
                 #f
                 (if (null? (cddr expr))
                     (expand-macros (cadr expr))
-                    (let ((t (gensym "t")))
+                    (let ((t (gensym)))
                       `(let ((,t ,(expand-macros (cadr expr))))
                          (if ,t ,t ,(expand-macros (cons 'or (cddr expr)))))))))
            ((eq? tag 'and)
@@ -300,7 +305,7 @@
                 #t
                 (if (null? (cddr expr))
                     (expand-macros (cadr expr))
-                    (let ((t (gensym "t")))
+                    (let ((t (gensym)))
                       `(let ((,t ,(expand-macros (cadr expr))))
                          (if ,t ,(expand-macros (cons 'and (cddr expr))) #f))))))
            ((eq? tag 'not)
@@ -359,7 +364,7 @@
      (else
       (let ((_ (display expr)))
         (let ((_ (newline)))
-          (error 'parse-expr "Unrecognized expression"))))))
+          (error 'parse-expr ))))))
   (define (parse-pred expr)
     (cond
      ((boolean? expr) `(bool ,expr))
@@ -403,7 +408,7 @@
        (else
         (let ((_ (display function)))
           (let ((_ (newline)))
-            (error 'parse-function "Invalid top-level declaration")))))))
+            (error 'parse-function )))))))
 
   (define (parse-functions functions)
     (if (null? functions)
@@ -430,7 +435,7 @@
           `(cons ,(expand-quote (car expr) quasi) ,(expand-quote (cdr expr) quasi))))
      (else
       (let ((_ (trace-value expr)))
-        (error 'expand-quote "Invalid datum")))))
+        (error 'expand-quote )))))
 
   (define (args->types args)
     (if (null? args)
@@ -486,7 +491,7 @@
        (else
         (let ((_ (display expr)))
           (let ((_ (newline)))
-            (error 'apply-representation-expr "Unrecognized expr")))))))
+            (error 'apply-representation-expr )))))))
   (define (apply-representation-expr* expr*)
     (if (null? expr*)
         '()
@@ -508,7 +513,7 @@
        (else
         (let ((_ (display pred)))
           (let ((_ (newline)))
-            (error 'apply-representation-pred "Unrecognized pred")))))))
+            (error 'apply-representation-pred )))))))
   (define (apply-representation-bindings bindings)
     (if (null? bindings)
         '()
@@ -591,7 +596,7 @@
                     (i32.const ,(fixnum-mask)))))
        (else (let ((_ (display expr)))
                (let ((_ (newline)))
-                 (error 'compile-expr "Unrecognized expression")))))))
+                 (error 'compile-expr )))))))
   (define (compile-pred expr env)
     (let ((op (car expr)))
       (cond
@@ -618,7 +623,7 @@
        (else
         (let ((_ (display expr)))
           (let ((_ (newline)))
-            (error 'compile-pred "Unrecognized predicate")))))))
+            (error 'compile-pred )))))))
 
   (define (bindings->env bindings env index)
     (if (null? bindings)
@@ -660,7 +665,7 @@
         (count-locals-exprs (cdr body)))
        (else
         (let ((_ (trace-value body)))
-          (error 'count-locals "Unrecognized expression"))))))
+          (error 'count-locals ))))))
   (define (count-locals-exprs exprs)
     (if (null? exprs)
         0
@@ -760,7 +765,7 @@
           (cons tag args)))
        (else
         (let ((_ (trace-value expr)))
-          (error 'resolve-calls-expr "Unrecognized expression"))))))
+          (error 'resolve-calls-expr))))))
   (define (resolve-calls-fn function env)
     `(,(car function) ,(resolve-calls-expr (cadr function) env)))
   (define (resolve-calls functions env)
@@ -830,7 +835,7 @@
      ;; functions are (fn (t1 ...) (t2 ...)), for t1 ... -> t2 ...
      ((and (pair? type) (eq? (car type) 'fn))
       (cons #x60 (cons (encode-type-vec (cadr type)) (encode-type-vec (caddr type)))))
-     (else (let ((_ (trace-value type))) (error 'encode-type "Unrecognized type")))))
+     (else (let ((_ (trace-value type))) (error 'encode-type)))))
 
   (define (wasm-type-section types)
     (make-section 1 (encode-type-vec types)))
@@ -849,8 +854,8 @@
               (cons (encode-string name)
 		    (cons '(#x00) (number->leb-u8-list index))))))
   (define (encode-memory-import)
-    (cons (encode-string "memory")
-	  (cons (encode-string "memory")
+    (cons (encode-string)
+	  (cons (encode-string)
 		;; Import a memory with at least 1 page and no maximum.
 		'(#x02 #x00 #x01))))
 
@@ -870,7 +875,7 @@
       (cons (encode-string (caddr export)) (cons #x00 (number->leb-u8-list (cadr export)))))
      (else
       (let ((_ (trace-value export)))
-        (error 'encode-export "Unrecognized export")))))
+        (error 'encode-export)))))
   (define (encode-export-contents exports)
     (if (null? exports)
         '()
@@ -948,7 +953,7 @@
         (encode-simple-op #x75 expr))
        (else
         (let ((_ (trace-value expr)))
-          (error 'encode-expr "Unrecognized expr"))))))
+          (error 'encode-expr))))))
 
   (define (encode-code locals body)
     (let ((contents (cons
@@ -993,5 +998,4 @@
      (else (let ((_ (write-bytes (car ls))))
              (write-bytes (cdr ls))))))
   (define (compile-stdin->stdout)
-    (let ((_ (error 'compile-stdin->stdout "Compile Error")))
-      (write-bytes (compile-library (read))))))
+    (write-bytes (compile-library (read)))))
