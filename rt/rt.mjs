@@ -51,7 +51,8 @@ function fixnum_from_number(n) {
 
 class SchemeError extends Error {
     constructor(where, what) {
-	this.where = where
+      super();
+        this.where = where
 	this.what = what
     }
 }
@@ -63,9 +64,9 @@ function rt(engine) {
 	    //console.info(val);
 	    return tag_constant(val, TAGS.character);
 	}
-	return CONSTANTS.eof;	
+	return CONSTANTS.eof;
     }
-    
+
     return {
 	'rt-add1': function(ptr) {
 	    // This is a trivial function that is mostly used to test function imports.
@@ -76,7 +77,7 @@ function rt(engine) {
 	    if (peek != CONSTANTS.eof) {
 		engine.input_index++;
 	    }
-	    console.info(`read-char: ${engine.jsFromScheme(val)}`);
+	    //console.info(`read-char: ${engine.jsFromScheme(val)}`);
 	    return val;
 	},
 	'peek-char': peek,
@@ -121,7 +122,7 @@ export class Engine {
 
 	return schism_module;
     }
-    
+
     setCurrentInputPort(data) {
 	this.input_port_data = data;
 	this.input_index = 0;

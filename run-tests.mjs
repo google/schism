@@ -1,29 +1,16 @@
 // -*- javascript -*-
 import * as Schism from './rt/rt';
-import { OPTIONS,
+import { compileWithHostScheme, OPTIONS,
 	 stage0_bytes, stage0_compile,
 	 stage1_bytes, stage1_compile,
 	 stage2_bytes, stage2_compile,
 	 stage3_bytes } from './run-utils';
 
 import assert from 'assert';
-import child_process from 'child_process';
 import fs from 'fs';
 import util from 'util';
 
 Error.stackTraceLimit = 64;
-
-// Returns the contents of out.wasm
-async function compileWithHostScheme(name) {
-    const { stdout, stderr } = await util.promisify(child_process.exec)(`./schism.ss ${name}`);
-
-    return util.promisify(fs.readFile)('out.wasm');
-}
-
-// Uses host scheme to compile schism and returns the wasm bytes
-async function compileBootstrap() {
-    return compileWithHostScheme('./schism/compiler.ss');
-}
 
 async function runTest(name, compile = compileWithHostScheme) {
     const bytes = fs.readFileSync(name);
