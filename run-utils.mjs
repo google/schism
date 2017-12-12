@@ -11,7 +11,7 @@ export const OPTIONS = {
 
     // which stages to build and run tests for
     stage0: true,
-    stage1: true,
+    stage1: false,
     stage2: false,
     stage3: false, // compile-only, no point running tests
 }
@@ -49,9 +49,12 @@ export const stage0_bytes = OPTIONS.stage0 ? (async function() {
 export const stage0_compile = OPTIONS.stage0 ? make_compiler(stage0_bytes) : undefined;
 export const stage1_bytes = OPTIONS.stage1 ? stage0_compile(fs.readFileSync('./schism/compiler.ss'))
                                     : undefined;
-stage1_bytes.then((bytes) => {
+if (OPTIONS.stage1) {
+  stage1_bytes.then((bytes) => {
     fs.writeFileSync('schism-stage1.wasm', bytes);
-});
+  });
+}
+
 export const stage1_compile = OPTIONS.stage1 ? make_compiler(stage1_bytes) : undefined;
 export const stage2_bytes = OPTIONS.stage2 ? stage1_compile(fs.readFileSync('./schism/compiler.ss'))
                                     : undefined;

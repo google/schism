@@ -993,5 +993,4 @@
      (else (let ((_ (write-bytes (car ls))))
              (write-bytes (cdr ls))))))
   (define (compile-stdin->stdout)
-    (let ((_ (error 'compile-stdin->stdout "Compile Error")))
-      (write-bytes (compile-library (read))))))
+    (write-bytes (compile-library (read)))))
