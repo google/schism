@@ -12,8 +12,8 @@ export const OPTIONS = {
     // which stages to build and run tests for
     stage0: true,
     stage1: true,
-    stage2: false,
-    stage3: false, // compile-only, no point running tests
+    stage2: true,
+    stage3: true, // compile-only, no point running tests
 }
 
 // Returns the contents of out.wasm

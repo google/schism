@@ -87,7 +87,12 @@ async function createSchismFromWasm(schism_bytes) {
 
 // We should be at a fixpoint by now, so we compile stage3 only to check for equality.
 async function checkCompilerFixpoint() {
-    assert.equal(await stage2_bytes, await stage3_bytes);
+  const stage2 = await stage2_bytes;
+  const stage3 = await stage3_bytes;
+  assert.equal(stage2.length, stage3.length);
+  for(const i in stage2) {
+    assert.equal(stage2[i], stage3[i], `stage2 and stage3 compilers differ at byte ${i}`);
+  }
 }
 
 try {
