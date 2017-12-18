@@ -43,7 +43,7 @@
             (index-of-helper x (cdr ls) (+ 1 index)))
         (let ((_ (display x)))
           (let ((_ (newline)))
-              (error 'index-of "Could not find item")))))
+            (error 'index-of "Could not find item")))))
   (define (index-of x ls)
     (index-of-helper x ls 0))
 
@@ -151,10 +151,10 @@
          (car (%set-tag x ,(pair-tag))))
        (define (list-all-eq? a b)
          (if (null? a)
-	     (null? b)
-	     (and (not (null? b))
-		  (eq? (car a) (car b))
-		  (list-all-eq? (cdr a) (cdr b)))))
+             (null? b)
+             (and (not (null? b))
+                  (eq? (car a) (car b))
+                  (list-all-eq? (cdr a) (cdr b)))))
        (define (< a b)
          (if (< a b) #t #f))
        (define (> a b)
@@ -610,7 +610,7 @@
           ,(compile-expr (cadr expr) env)
           ,(compile-expr (caddr expr) env)))
        ((eq? op 'bool)
-       	;; Since we're in pred context, bools get translated into
+        ;; Since we're in pred context, bools get translated into
         ;; things that go directly into if.
         (if (cadr expr)
             '(i32.const 1)
@@ -846,13 +846,13 @@
     (let ((module (car import))
           (name (cadr import)))
       (cons (encode-string module)
-              (cons (encode-string name)
-		    (cons '(#x00) (number->leb-u8-list index))))))
+            (cons (encode-string name)
+                  (cons '(#x00) (number->leb-u8-list index))))))
   (define (encode-memory-import)
     (cons (encode-string "memory")
-	  (cons (encode-string "memory")
-		;; Import a memory with at least 1 page and no maximum.
-		'(#x02 #x00 #x01))))
+          (cons (encode-string "memory")
+                ;; Import a memory with at least 1 page and no maximum.
+                '(#x02 #x00 #x01))))
 
   (define (encode-u32-vec-contents nums)
     (if (null? nums)
@@ -907,29 +907,29 @@
         (cons (encode-expr (caddr expr)) (cons #x21 (number->leb-u8-list (cadr expr)))))
        ((eq? tag 'call)
         (cons (encode-exprs (cddr expr))
-                (cons #x10 (number->leb-u8-list (cadr expr)))))
+              (cons #x10 (number->leb-u8-list (cadr expr)))))
        ((eq? tag 'if)
         (let ((t (cadr expr))
               (c (caddr expr))
               (a (cadddr expr)))
           ;; For now, if blocks are assumed to always return i32
           (cons (encode-expr t)
-                  (cons #x04 (cons #x7f (cons (encode-expr c)
-                                                (cons #x05 (cons (encode-expr a) '(#x0b)))))))))
+                (cons #x04 (cons #x7f (cons (encode-expr c)
+                                            (cons #x05 (cons (encode-expr a) '(#x0b)))))))))
        ((eq? tag 'i32.store)
         (let ((align 0)
               (offset (cadadr expr))
               (index (encode-expr (caddr expr)))
               (value (encode-expr (cadddr expr))))
           (cons (cons index value)
-                  (cons '(#x36 #x0) ;;always use 0 alignment
-                          (number->leb-u8-list offset)))))
+                (cons '(#x36 #x0) ;;always use 0 alignment
+                      (number->leb-u8-list offset)))))
        ((eq? tag 'i32.load)
         (let ((align 0)
               (offset (cadadr expr))
               (index (encode-expr (caddr expr))))
           (cons index (cons '(#x28 #x0) ;;always use 0 alignment
-                                (number->leb-u8-list offset)))))
+                            (number->leb-u8-list offset)))))
        ((eq? tag 'i32.add)
         (encode-simple-op #x6a expr))
        ((eq? tag 'i32.sub)
@@ -985,7 +985,7 @@
                               (cons (wasm-function-section (number-list functions
                                                                         (length imports)))
                                     (cons (wasm-export-section exports)
-					  (wasm-code-section functions)))))))))))
+                                          (wasm-code-section functions)))))))))))
   (define (write-bytes ls)
     (cond
      ((null? ls) #t)

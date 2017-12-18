@@ -45,22 +45,9 @@ Many of the hard things needed for self-hosting are in place. These include:
   the stack)
 * Pairs, basic support for heap-allocation
 * Conditionals, basic comparison operators
-
-The main things that are missing, that I think we'll need
-
 * Symbols
 * A reader
 * Runtime integration
-
-Runtime integration is probably a good thing to tackle next. We'll
-start by hardcoding a couple of import functions (like read-byte,
-write-byte). Then we'll provide JS and Scheme implementations of
-these, as well as plumbing to allow us to run both version.
-
-This will leave is in a good place to write a reader that will work in
-Wasm or Chez Scheme.
-
-The goal is to fit the compiler in under 1000 lines of code.
 
 ## Testing
 
@@ -70,4 +57,4 @@ called `do-test`. This function can do whatever it wants, but then
 must return 1 if the test passes and 0 otherwise. Once booleans are
 supported, these tests will return `#f` on failure.
 
-To run all the tests, do `./run-tests.js`.
+To run all the tests, do `./run-tests.sh`.
