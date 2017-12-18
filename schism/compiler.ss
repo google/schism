@@ -287,6 +287,7 @@
     (if (pair? expr)
         (let ((tag (car expr)))
           (cond
+           ((or (eq? tag 'quote) (eq? tag 'quasiquote)) expr)
            ((eq? tag 'or)
             (if (null? (cdr expr))
                 #f

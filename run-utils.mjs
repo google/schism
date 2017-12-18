@@ -11,7 +11,7 @@ export const OPTIONS = {
 
     // which stages to build and run tests for
     stage0: true,
-    stage1: false,
+    stage1: true,
     stage2: false,
     stage3: false, // compile-only, no point running tests
 }

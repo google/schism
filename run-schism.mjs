@@ -7,9 +7,9 @@ import util from 'util';
 
 async function runSchism() {
     // set up the input port
-    //const input_file = "./schism/compiler.ss";
-    const input_file = "./test/add-num.ss";
-    const compiler_output = await stage1_compile(fs.readFileSync(input_file));
+    const input_file = "./schism/compiler.ss";
+    //const input_file = "./test/add-num.ss";
+    const compiler_output = await stage0_compile(fs.readFileSync(input_file));
     fs.writeFileSync('out.wasm', compiler_output);
 }
 
