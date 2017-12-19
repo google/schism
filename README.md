@@ -82,7 +82,7 @@ compiling with the Stage2 compiler. Stage3 should be equal to the Stage2
 compiler, and currently we only generate it to verify this is the case.
 
 To add a new feature, the usual flow is to start by adding a small test that
-uses it. This test will probably fail at least the stage0 compiler. Once the
-feature is implemented, then the stage1 and stage2 compilers should pass the
+uses it. This test will probably fail at least the Stage0 compiler. Once the
+feature is implemented, then the Stage1 and Stage2 compilers should pass the
 test. Note that you cannot use the new feature in the compiler until it works in
 stage2. Once this happens, you should make a new snapshot using `mksnapshot.sh`.
