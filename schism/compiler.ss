@@ -162,7 +162,8 @@
        (define (max a b)
          (if (< a b) b a))
        (define (read)
-         (start-read (read-char)))
+         (let ((_ (read-skip-whitespace-and-comments)))
+           (start-read (read-char))))
        (define (start-read c)
          (cond
           ((char-numeric? c)
