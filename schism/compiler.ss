@@ -11,6 +11,7 @@
 ;; WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 ;; See the License for the specific language governing permissions and
 ;; limitations under the License.
+
 (library (schism compiler)
   (export compile-library compile-stdin->stdout)
   (import (rnrs)
@@ -967,7 +968,7 @@
   ;; Takes a library and returns a list of the corresponding Wasm module
   ;; bytes
   (define (compile-library library)
-    ;; (parsed-lib : (exports . functions)
+    ;; (parsed-lib : (exports . functions))
     (let ((parsed-lib (parse-library (expand-macros library))))
       (let ((exports (car parsed-lib))
             (types (functions->types (cdr parsed-lib)))
