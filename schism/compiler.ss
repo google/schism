@@ -381,6 +381,8 @@
             `(let ,bindings ,body)))
          ((eq? op 'begin)
           (cons 'begin (parse-exprs (cdr expr))))
+         ((eq? op 'lambda)
+          (error 'parse-expr "Lambda is not yet supported"))
          ((intrinsic? op)
           (cons op (parse-exprs (cdr expr))))
          (else
