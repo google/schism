@@ -20,10 +20,16 @@ const TAGS = {
   constant: 1,
   pair: 2,
   character: 3,
+  string: 4,
+  symbol: 5,
 };
 
 function tag_constant(value, tag) {
     return (value << TAG_SIZE) | tag;
+}
+
+function replace_tag(ptr, tag) {
+  return tag_constant(extract_value(ptr), tag);
 }
 
 function extract_tag(value) {
@@ -50,14 +56,14 @@ const CONSTANTS = {
 
 // Convert a Scheme ptr into a corresponding JavaScript value
 function js_from_scheme(ptr) {
-    switch (extract_tag(ptr)) {
+  switch (extract_tag(ptr)) {
     case TAGS.fixnum:
-	return ptr >> TAG_SIZE; // sign extending shift so negatives work.
+      return ptr >> TAG_SIZE; // sign extending shift so negatives work.
     case TAGS.constant:
-	return SCHEME_CONSTANTS[extract_value(ptr)];
+      return SCHEME_CONSTANTS[extract_value(ptr)];
     case TAGS.character:
-	return String.fromCharCode(extract_value(ptr));
-    }
+      return String.fromCharCode(extract_value(ptr));
+  }
 }
 
 function fixnum_from_number(n) {
@@ -65,18 +71,17 @@ function fixnum_from_number(n) {
 }
 
 class SchemeError extends Error {
-    constructor(where, what) {
-      super();
-        this.where = where
-	this.what = what
-    }
+  constructor(where, what) {
+    super(`Scheme runtime error: ${what}`);
+    this.where = where
+    this.what = what
+  }
 }
 
 function rt(engine) {
     function peek() {
 	if (engine.input_index < engine.input_port_data.length) {
 	    const val = engine.input_port_data[engine.input_index];
-	    //console.info(val);
 	    return tag_constant(val, TAGS.character);
 	}
 	return CONSTANTS.eof;
@@ -92,7 +97,6 @@ function rt(engine) {
 	    if (peek != CONSTANTS.eof) {
 		engine.input_index++;
 	    }
-	    //console.info(`read-char: ${engine.jsFromScheme(val)}`);
 	    return val;
 	},
 	'peek-char': peek,
@@ -100,8 +104,8 @@ function rt(engine) {
 	    const byte = js_from_scheme(ptr).charCodeAt(0);
 	    engine.output_data.push(byte);
 	},
-	'error': function(where, what) {
-	    throw new SchemeError(engine.jsFromScheme(where), engine.jsFromScheme(what));
+      'error': function(where, what) {
+	    throw new SchemeError(engine.schemeToString(where), engine.schemeToString(what));
 	}
     }
 }
@@ -113,41 +117,76 @@ class Module {
 }
 
 export class Engine {
-    constructor() {
-	this.memory = new WebAssembly.Memory({initial: 16384});
-	this.rt = rt(this);
-	this.input_port_data = [];
-	this.input_index = 0;
-	this.output_data = [];
-	this.modules = [];
+  constructor() {
+    this.memory = new WebAssembly.Memory({initial: 16384});
+    this.rt = rt(this);
+    this.input_port_data = [];
+    this.input_index = 0;
+    this.output_data = [];
+    this.modules = [];
+  }
+
+  async loadWasmModule(bytes) {
+    const import_object = {
+      'rt': this.rt,
+      'memory': { 'memory': this.memory }
+    };
+
+    const result = await WebAssembly.instantiate(bytes, import_object);
+
+    let schism_module = new Module();
+    schism_module.wasm_instance = result.instance;
+    schism_module.engine = this;
+    this.modules.push(schism_module);
+
+    return schism_module;
+  }
+
+  setCurrentInputPort(data) {
+    this.input_port_data = data;
+    this.input_index = 0;
+  }
+
+  clearOutputBuffer() {
+    this.output_data.length = 0;
+  }
+
+  jsFromScheme(ptr) {
+    return js_from_scheme(ptr);
+  }
+
+  carOf(ptr) {
+    const mem_i32 = new Uint32Array(this.memory.buffer);
+    return mem_i32[extract_value(ptr) * 2];
+  }
+
+  cdrOf(ptr) {
+    const mem_i32 = new Uint32Array(this.memory.buffer);
+    return mem_i32[extract_value(ptr) * 2 + 1];
+  }
+
+  schemeToString(ptr) {
+    const tag = extract_tag(ptr);
+
+    if (tag == TAGS.symbol) {
+      const sym_val = this.carOf(tag);
+      if (replace_tag(sym_val, TAGS.constant) == CONSTANTS[null]) {
+	return `<gensym #{extract_value(ptr)}>`;
+      }
+      return this.schemeToString(replace_tag(sym_val, TAGS.string));
+    } else if (tag == TAGS.string) {
+      let x = ptr;
+      let s = "";
+      while (replace_tag(x, TAGS.constant) != CONSTANTS[null]) {
+	const c = this.jsFromScheme(this.carOf(x));
+	s += c;
+	x = this.cdrOf(x);
+
+	if (s.length > 100) return x;
+      }
+      return s;
+    } else {
+      throw new Error("To string not implemented for tag " + tag);
     }
-
-    async loadWasmModule(bytes) {
-	const import_object = {
-	    'rt': this.rt,
-	    'memory': { 'memory': this.memory }
-	};
-
-	const result = await WebAssembly.instantiate(bytes, import_object);
-
-	let schism_module = new Module();
-	schism_module.wasm_instance = result.instance;
-	schism_module.engine = this;
-	this.modules.push(schism_module);
-
-	return schism_module;
-    }
-
-    setCurrentInputPort(data) {
-	this.input_port_data = data;
-	this.input_index = 0;
-    }
-
-    clearOutputBuffer() {
-	this.output_data.length = 0;
-    }
-
-    jsFromScheme(ptr) {
-	return js_from_scheme(ptr);
-    }
+  }
 }
