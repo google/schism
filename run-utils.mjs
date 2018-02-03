@@ -73,6 +73,19 @@ if (OPTIONS.stage1) {
 export const stage1_compile = OPTIONS.stage1 ? make_compiler(stage1_bytes) : undefined;
 export const stage2_bytes = OPTIONS.stage2 ? stage1_compile(fs.readFileSync('./schism/compiler.ss'))
                                     : undefined;
+
+if (OPTIONS.stage2) {
+  stage2_bytes.then((bytes) => {
+    fs.writeFileSync('schism-stage2.wasm', bytes);
+  });
+}
+
 export const stage2_compile = OPTIONS.stage2 ? make_compiler(stage2_bytes) : undefined;
 export const stage3_bytes = OPTIONS.stage3 ? stage2_compile(fs.readFileSync('./schism/compiler.ss'))
                                     : undefined;
+
+if (OPTIONS.stage3) {
+  stage3_bytes.then((bytes) => {
+    fs.writeFileSync('schism-stage3.wasm', bytes);
+  });
+}
