@@ -62,10 +62,16 @@
        (%wasm-import "rt" (peek-char))
        (%wasm-import "rt" (write-char c))
        (%wasm-import "rt" (error where what))
+       (%wasm-import "rt" (%log-char c))
+       (%wasm-import "rt" (%flush-log))
        ;; display, newline, etc are all just enough to compile. We'll fill them in later.
-       (define (display x) x)
+       (define (display x)
+	 (cond
+	  (else (error 'display "I don't know how to display this"))))
        (define (write x) x)
-       (define (newline) #f)
+       (define (newline)
+	 (let ((_ (%log-char #\newline)))
+	   (%flush-log)))
        (define (%base-pair) (%set-tag ,(allocation-pointer) ,(pair-tag)))
        (define (%symbol-table) (cdr (%base-pair)))
        (define (%alloc tag num-words)
