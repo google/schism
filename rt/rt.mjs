@@ -134,67 +134,67 @@ export class Engine {
     this.log = "";
   }
 
-  async loadWasmModule(bytes) {
-    const import_object = {
-      'rt': this.rt,
-      'memory': { 'memory': this.memory }
-    };
+    async loadWasmModule(bytes) {
+	const import_object = {
+	    'rt': this.rt,
+	    'memory': { 'memory': this.memory }
+	};
 
-    const result = await WebAssembly.instantiate(bytes, import_object);
+	const result = await WebAssembly.instantiate(bytes, import_object);
 
-    let schism_module = new Module();
-    schism_module.wasm_instance = result.instance;
-    schism_module.engine = this;
-    this.modules.push(schism_module);
+	let schism_module = new Module();
+	schism_module.wasm_instance = result.instance;
+	schism_module.engine = this;
+	this.modules.push(schism_module);
 
-    return schism_module;
-  }
-
-  setCurrentInputPort(data) {
-    this.input_port_data = data;
-    this.input_index = 0;
-  }
-
-  clearOutputBuffer() {
-    this.output_data.length = 0;
-  }
-
-  jsFromScheme(ptr) {
-    return js_from_scheme(ptr);
-  }
-
-  carOf(ptr) {
-    const mem_i32 = new Uint32Array(this.memory.buffer);
-    return mem_i32[extract_value(ptr) * 2];
-  }
-
-  cdrOf(ptr) {
-    const mem_i32 = new Uint32Array(this.memory.buffer);
-    return mem_i32[extract_value(ptr) * 2 + 1];
-  }
-
-  schemeToString(ptr) {
-    const tag = extract_tag(ptr);
-
-    if (tag == TAGS.symbol) {
-      const sym_val = this.carOf(tag);
-      if (replace_tag(sym_val, TAGS.constant) == CONSTANTS[null]) {
-	return `<gensym #{extract_value(ptr)}>`;
-      }
-      return this.schemeToString(replace_tag(sym_val, TAGS.string));
-    } else if (tag == TAGS.string) {
-      let x = ptr;
-      let s = "";
-      while (replace_tag(x, TAGS.constant) != CONSTANTS[null]) {
-	const c = this.jsFromScheme(this.carOf(x));
-	s += c;
-	x = this.cdrOf(x);
-
-	if (s.length > 100) return x;
-      }
-      return s;
-    } else {
-      throw new Error("To string not implemented for tag " + tag);
+	return schism_module;
     }
-  }
+
+    setCurrentInputPort(data) {
+	this.input_port_data = data;
+	this.input_index = 0;
+    }
+
+    clearOutputBuffer() {
+	this.output_data.length = 0;
+    }
+
+    jsFromScheme(ptr) {
+	return js_from_scheme(ptr);
+    }
+
+    carOf(ptr) {
+	const mem_i32 = new Uint32Array(this.memory.buffer);
+	return mem_i32[extract_value(ptr) * 2];
+    }
+
+    cdrOf(ptr) {
+	const mem_i32 = new Uint32Array(this.memory.buffer);
+	return mem_i32[extract_value(ptr) * 2 + 1];
+    }
+
+    schemeToString(ptr) {
+	const tag = extract_tag(ptr);
+
+	if (tag == TAGS.symbol) {
+	    const sym_val = this.carOf(tag);
+	    if (replace_tag(sym_val, TAGS.constant) == CONSTANTS[null]) {
+		return `<gensym #{extract_value(ptr)}>`;
+	    }
+	    return this.schemeToString(replace_tag(sym_val, TAGS.string));
+	} else if (tag == TAGS.string) {
+	    let x = ptr;
+	    let s = "";
+	    while (replace_tag(x, TAGS.constant) != CONSTANTS[null]) {
+		const c = this.jsFromScheme(this.carOf(x));
+		s += c;
+		x = this.cdrOf(x);
+
+		if (s.length > 100) return x;
+	    }
+	    return s;
+	} else {
+	    throw new Error("To string not implemented for tag " + tag);
+	}
+    }
 }

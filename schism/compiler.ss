@@ -302,12 +302,18 @@
        (define (symbol? p)
          (eq? (%get-tag p) ,(symbol-tag))))))
 
+  ;; TODO: move this into the library
+  (define (memq x ls)
+    (cond
+     ((null? ls) #f)
+     ((eq? (car ls) x) ls)
+     (else (memq x (cdr ls)))))
+  
   (define (intrinsic? x)
-    (or (eq? x '%read-mem) (eq? x '%store-mem) (eq? x '%get-tag)
-        (eq? x '%set-tag) (eq? x '%as-fixnum) (eq? x 'bitwise-and)
-        (eq? x 'bitwise-not) (eq? x 'bitwise-ior) (eq? x 'bitwise-arithmetic-shift-left)
-        (eq? x 'bitwise-arithmetic-shift-right) (eq? x 'eof-object) (eq? x '+) (eq? x '*)
-        (eq? x '-) (eq? x 'set-car!) (eq? x 'set-cdr!)))
+    (memq x '(%read-mem %store-mem %get-tag %set-tag %as-fixnum bitwise-and
+			bitwise-not bitwise-ior bitwise-arithmetic-shift-left
+			bitwise-arithmetic-shift-right eof-object + * - set-car!
+			set-cdr!)))
 
   ;; ====================== ;;
   ;; Parsing                ;;
@@ -382,7 +388,9 @@
          ((eq? op 'begin)
           (cons 'begin (parse-exprs (cdr expr))))
          ((eq? op 'lambda)
-          (error 'parse-expr "Lambda is not yet supported"))
+	  (let ((args (cadr expr))
+		(body (caddr expr))) ;; for now allow single-expression bodies
+	    `(lambda ,args ,(parse-expr body))))
          ((intrinsic? op)
           (cons op (parse-exprs (cdr expr))))
          (else
@@ -391,7 +399,7 @@
      (else
       (let ((_ (display expr)))
         (let ((_ (newline)))
-          (error 'parse-expr "Unrecognized expression"))))))
+          (error 'parse-expr "parse-expr: Unrecognized expression"))))))
   (define (parse-pred expr)
     (cond
      ((boolean? expr) `(bool ,expr))
@@ -465,6 +473,28 @@
         (cons 'i32 (args->types (cdr args)))))
 
   ;; ====================== ;;
+  ;; Closure conversion     ;;
+  ;; ====================== ;;
+
+  (define (convert-closures fn*)
+    (if (null? fn*)
+	'()
+	(cons (convert-closures-fn (car fn*)) (convert-closures (cdr fn*)))))
+  (define (convert-closures-fn fn)
+    (if (eq? (car fn) '%wasm-import)
+	fn
+	(let ((def (car fn))
+	      (body (cadr fn)))
+	  `(,def ,(convert-closures-expr body)))))
+  (define (convert-closures-expr expr)
+    (cond
+     (#t expr)
+     (else
+      (let  ((_ (display expr)))
+	(let ((_ (newline)))
+	  (error 'convert-closures-expr "convert-closures-expr: Unrecognized expr"))))))
+
+  ;; ====================== ;;
   ;; Apply representation   ;;
   ;; ====================== ;;
   (define (apply-representation fn*)
@@ -511,7 +541,7 @@
        (else
         (let ((_ (display expr)))
           (let ((_ (newline)))
-            (error 'apply-representation-expr "Unrecognized expr")))))))
+            (error 'apply-representation-expr "apply-representation-expr: Unrecognized expr")))))))
   (define (apply-representation-expr* expr*)
     (if (null? expr*)
         '()
@@ -615,7 +645,7 @@
                     (i32.const ,(fixnum-mask)))))
        (else (let ((_ (display expr)))
                (let ((_ (newline)))
-                 (error 'compile-expr "Unrecognized expression")))))))
+                 (error 'compile-expr "compile-expr: Unrecognized expression")))))))
   (define (compile-pred expr env)
     (let ((op (car expr)))
       (cond
@@ -684,7 +714,7 @@
         (count-locals-exprs (cdr body)))
        (else
         (let ((_ (trace-value body)))
-          (error 'count-locals "Unrecognized expression"))))))
+          (error 'count-locals "count-locals: Unrecognized expression"))))))
   (define (count-locals-exprs exprs)
     (if (null? exprs)
         0
@@ -784,7 +814,7 @@
           (cons tag args)))
        (else
         (let ((_ (trace-value expr)))
-          (error 'resolve-calls-expr "Unrecognized expression"))))))
+          (error 'resolve-calls-expr "resolve-calls-expr: Unrecognized expression"))))))
   (define (resolve-calls-fn function env)
     `(,(car function) ,(resolve-calls-expr (cadr function) env)))
   (define (resolve-calls functions env)
@@ -971,7 +1001,7 @@
         (encode-simple-op #x75 expr))
        (else
         (let ((_ (trace-value expr)))
-          (error 'encode-expr "Unrecognized expr"))))))
+          (error 'encode-expr "encode-expr: Unrecognized expr"))))))
 
   (define (encode-code locals body)
     (let ((contents (cons
@@ -998,7 +1028,7 @@
             (function-names (functions->names (cdr parsed-lib))))
         (let ((compiled-module (compile-functions
                                 (apply-representation
-                                 (cdr parsed-lib)))))
+                                 (convert-closures (cdr parsed-lib))))))
           (let ((exports (build-exports exports (cdr parsed-lib) 0))
                 (imports (gather-imports compiled-module))
                 (functions (resolve-calls compiled-module function-names)))
