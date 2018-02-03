@@ -67,11 +67,16 @@
        ;; display, newline, etc are all just enough to compile. We'll fill them in later.
        (define (display x)
 	 (cond
+	  ((pair? x) (%display-chars-as-string (string->list "<pair>")))
 	  (else (error 'display "I don't know how to display this"))))
+       (define (%display-chars-as-string chars)
+	 (if (null? chars)
+	     #f
+	     (let ((_ (%log-char (car chars))))
+	       (%display-chars-as-string (cdr chars)))))
        (define (write x) x)
        (define (newline)
-	 (let ((_ (%log-char #\newline)))
-	   (%flush-log)))
+	 (%flush-log))
        (define (%base-pair) (%set-tag ,(allocation-pointer) ,(pair-tag)))
        (define (%symbol-table) (cdr (%base-pair)))
        (define (%alloc tag num-words)

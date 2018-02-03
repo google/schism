@@ -108,7 +108,7 @@ function rt(engine) {
 	    throw new SchemeError(engine.schemeToString(where), engine.schemeToString(what));
 	},
 	'%log-char': c => {
-	    engine.log += c;
+	    engine.log += engine.jsFromScheme(c);
 	},
 	'%flush-log': () => {
 	    console.info(engine.log);
