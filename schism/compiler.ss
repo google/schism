@@ -67,8 +67,18 @@
        ;; display, newline, etc are all just enough to compile. We'll fill them in later.
        (define (display x)
 	 (cond
-	  ((pair? x) (%display-chars-as-string (string->list "<pair>")))
-	  (else (error 'display "I don't know how to display this"))))
+	  ((pair? x)
+	   (let ((_ (%display-raw-string "(")))
+	     (let ((_ (display (car x))))
+	       (let ((_ (%display-raw-string " . ")))
+		 (let ((_ (display (cdr x))))
+		   (%display-raw-string ")"))))))
+	  ((null? x)
+	   (%display-raw-string "()"))
+	  ((symbol? x) (%display-raw-string (symbol->string x)))
+	  (else (%display-raw-string "<!unimplemented!>"))))
+       (define (%display-raw-string s)
+	 (%display-chars-as-string (string->list s)))
        (define (%display-chars-as-string chars)
 	 (if (null? chars)
 	     #f
