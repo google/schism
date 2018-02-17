@@ -2,14 +2,11 @@
   (export compile-library compile-stdin->stdout)
   (import (rnrs)
           (only (chezscheme) gensym))
-
   (define (tag-size) 3)
   (define (fixnum-mask) -8) ;; a magic mask that turns ptrs into fixnums
   (define (tag-mask) 7)
-
   (define (tag-constant value tag)
     (bitwise-ior (bitwise-arithmetic-shift-left value (tag-size)) tag))
-
   ;; fixnums are 0 so most arithmetic doesn't require shifting
   (define (fixnum-tag) 0)
   ;; constant-tag is used for implementation constants, such as #f, #t and ()
@@ -18,19 +15,16 @@
   (define (constant-true) (tag-constant 1 (constant-tag)))
   (define (constant-null) (tag-constant 2 (constant-tag)))
   (define (constant-eof) (tag-constant 3 (constant-tag)))
-
   (define (pair-tag) 2)
   (define (char-tag) 3)
   (define (string-tag) 4)
   (define (symbol-tag) 5)
-
   (define (allocation-pointer) 0)
   (define (word-size) 4)
 
   ;; ====================== ;;
   ;; Helpers, etc.          ;;
   ;; ====================== ;;
-
   (define (trace-value x)
     (let ((_ (write x)))
       (let ((_ (newline)))
@@ -283,7 +277,6 @@
   ;; ====================== ;;
   ;; Parsing                ;;
   ;; ====================== ;;
-
   (define (expand-macros expr)
     (if (pair? expr)
         (let ((tag (car expr)))
@@ -376,14 +369,12 @@
           `(neq? ,(parse-expr expr) ,(parse-expr #f))))))
      (else
       `(neq? ,(parse-expr expr) ,(parse-expr #f)))))
-
   (define (parse-bindings bindings)
     (if (null? bindings)
         '()
         (let ((var (caar bindings))
               (value (parse-expr (cadar bindings))))
           (cons `(,var ,value) (parse-bindings (cdr bindings))))))
-
   (define (parse-body* body*)
     (if (null? body*)
         '()
@@ -391,7 +382,6 @@
   (define (parse-body body)
     ;; expr ... -> (begin expr ...)
     (cons 'begin (parse-body* body)))
-
   (define (parse-function function)
     (let ((type (car function)))
       (cond
@@ -406,12 +396,10 @@
         (let ((_ (display function)))
           (let ((_ (newline)))
             (error 'parse-function "Invalid top-level declaration")))))))
-
   (define (parse-functions functions)
     (if (null? functions)
         '()
         (cons (parse-function (car functions)) (parse-functions (cdr functions)))))
-
   (define (parse-library lib)
     ;; For now just assume it's correctly formed. We can do error checking later.
     (let ((body (cddr lib)))      ;; skip the library and name
@@ -439,11 +427,9 @@
         '()
         (cons 'i32 (args->types (cdr args)))))
 
-
   ;; ====================== ;;
   ;; Apply representation   ;;
   ;; ====================== ;;
-
   (define (apply-representation fn*)
     (if (null? fn*)
         '()
@@ -521,7 +507,6 @@
   ;; ====================== ;;
   ;; Compile (make wasm)    ;;
   ;; ====================== ;;
-
   (define (compile-exprs exprs env)
     (if (null? exprs)
         '()
@@ -786,7 +771,6 @@
   ;; ====================== ;;
   ;; Wasm Binary Generation ;;
   ;; ====================== ;;
-
   (define (number->leb-u8-list n)
     (if (and (< n #x40) (> n (- 0 #x40)))
         `(,(bitwise-and n #x7f))

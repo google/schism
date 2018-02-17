@@ -3,6 +3,8 @@
 Schism is an experimental self-hosting compiler from a subset of R6RS Scheme to
 WebAssembly.
 
+This is not an officially supported Google product.
+
 Development so far has focused on features necessary for self-hosting. The
 compiler itself is written in, and compiles, a very small subset of Scheme. Now
 that self-hosting has been achieved, development can shift towards supporting a
