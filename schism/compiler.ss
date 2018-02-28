@@ -315,6 +315,9 @@
 			bitwise-arithmetic-shift-right eof-object + * - set-car!
 			set-cdr!)))
 
+  (define (relop? x)
+    (memq x '(neq?)))
+  
   ;; ====================== ;;
   ;; Parsing                ;;
   ;; ====================== ;;
@@ -497,13 +500,44 @@
 	      (body (cadr fn)))
 	  `(,def ,(convert-closures-expr body)))))
   (define (convert-closures-expr expr)
-    (cond
-     (#t expr)
-     (else
-      (let  ((_ (display expr)))
-	(let ((_ (newline)))
-	  (error 'convert-closures-expr "convert-closures-expr: Unrecognized expr"))))))
-
+    (let ((tag (car expr)))
+      (cond
+       ((eq? tag 'let)
+	(let ((bindings (convert-closures-bindings (cadr expr)))
+	      (body (convert-closures-expr (caddr expr))))
+	  `(let ,bindings ,body)))
+       ((eq? tag 'begin)
+	(cons 'begin (convert-closures-expr* (cdr expr))))
+       ((eq? tag 'if)
+	`(if ,(convert-closures-expr (cadr expr))
+	     ,(convert-closures-expr (caddr expr))
+	     ,(convert-closures-expr (cadddr expr))))
+       ((relop? tag)
+	`(,tag . ,(convert-closures-expr* (cdr expr))))
+       ((eq? tag 'call)
+	`(call ,(cadr expr) . ,(convert-closures-expr* (cddr expr))))
+       (#t (let ((_ (display "convert-closures-expr unrecognized: ")))
+	     (let ((_ (display expr)))
+	       (let ((_ (newline)))
+		 expr))))
+       (else
+	(let  ((_ (display expr)))
+	  (let ((_ (newline)))
+	    (error 'convert-closures-expr "convert-closures-expr: Unrecognized expr")))))))
+  (define (convert-closures-bindings bindings)
+    (if (null? bindings)
+	'()
+	;; bindings: ((x e) . rest)
+	(let ((x (caar bindings))
+	      (e (convert-closures-expr (cadar bindings)))
+	      (rest (convert-closures-bindings (cdr bindings))))
+	  (cons `(,x ,e) rest))))
+  (define (convert-closures-expr* expr*)
+    (if (null? expr*)
+	'()
+	(cons (convert-closures-expr (car expr*))
+	      (convert-closures-expr* (cdr expr*)))))
+  
   ;; ====================== ;;
   ;; Apply representation   ;;
   ;; ====================== ;;
@@ -549,9 +583,11 @@
        ((intrinsic? tag)
         (cons tag (apply-representation-expr* (cdr expr))))
        (else
-        (let ((_ (display expr)))
-          (let ((_ (newline)))
-            (error 'apply-representation-expr "apply-representation-expr: Unrecognized expr")))))))
+	(let ((_ (display "unrecognized expr: ")))
+	  (let ((_ (display expr)))
+	    (let ((_ (newline)))
+	      (error 'apply-representation-expr
+		     "apply-representation-expr: Unrecognized expr"))))))))
   (define (apply-representation-expr* expr*)
     (if (null? expr*)
         '()
