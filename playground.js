@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { rt, js_from_scheme, set_current_input_port, output_data } from "./rt/rt.js";
+import * as Schism from  './rt/rt.js';
 
 //const old_peek = rt['peek-char'];
 //rt['peek-char'] = function() {
@@ -23,10 +23,11 @@ import { rt, js_from_scheme, set_current_input_port, output_data } from "./rt/rt
 //}
 
 async function compileSchism() {
-  let bytes = (await fetch('schism-stage0.wasm', { credentials: 'include' })).arrayBuffer();
-  let result = await WebAssembly.instantiate(await bytes, { 'rt': rt });
-  console.info("Loading Schism Complete");
-  return result.instance;
+  const schism_bytes = await fetch('schism-stage0.wasm', { credentials: 'include' });
+  const engine = new Schism.Engine;
+  const schism = await engine.loadWasmModule(await schism_bytes.arrayBuffer());
+  console.info('Loading Schism Complete');
+  return { schism, engine };
 }
 
 const compiler = compileSchism();
@@ -34,7 +35,7 @@ const compiler = compileSchism();
 async function compileAndRun() {
   const src = document.getElementById('src').value;
   console.info(`Compiling program: '${src}'`);
-  const schism = await compiler;
+  const { schism, engine } = await compiler;
   const compile = schism.exports['compile-stdin->stdout'];
 
   let new_src = [];
@@ -42,18 +43,22 @@ async function compileAndRun() {
     new_src.push(c.charCodeAt(0));
   }
 
-  set_current_input_port(new_src);
-  output_data.length = 0;
+  engine.setCurrentInputPort(new_src);
+  engine.output_data.length = 0;
   compile();
 
   console.info("Compilation complete, executing program");
 
-  const bytes = new Uint8Array(output_data);
-  const result = (await WebAssembly.instantiate(bytes, { 'rt': rt }));
-  set_current_input_port('');
-  output_data.length = 0;
+  const bytes = new Uint8Array(engine.output_data);
+  const import_object = {
+    'rt': engine.rt,
+    'memory': { 'memory': engine.memory }
+  };
+  const result = (await WebAssembly.instantiate(bytes, import_object));
+  engine.setCurrentInputPort('');
+  engine.output_data.length = 0;
 
-  const scheme_result = js_from_scheme(result.instance.exports.main());
+  const scheme_result = engine.jsFromScheme(result.instance.exports.main());
   document.getElementById('result').innerHTML = "" + scheme_result;
 
   console.info("Done");
