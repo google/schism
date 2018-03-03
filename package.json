@@ -1,0 +1,24 @@
+{
+  "name": "schism",
+  "version": "0.0.1",
+  "description": "A self-hosting Scheme to WebAssembly compiler",
+  "scripts": {
+    "test": "./run-tests.sh"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/google/schism.git"
+  },
+  "keywords": [
+    "WebAssembly",
+    "wasm",
+    "Scheme",
+    "compiler"
+  ],
+  "author": "Eric Holk <eholk@google.com>",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/google/schism/issues"
+  },
+  "homepage": "https://github.com/google/schism#readme"
+}

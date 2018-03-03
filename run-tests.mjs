@@ -124,21 +124,16 @@ async function checkCompilerFixpoint() {
   }
 }
 
-try {
-    let results = runTests().catch((e) => { throw e });
-    if (OPTIONS.stage3) {
-	checkCompilerFixpoint().catch((e) => { throw e });
-    }
-    results.then((failures) => {
-	if (failures.length > 0) {
-	    console.info("Some tests failed:");
-	    for(const failure of failures) {
-		console.info(`    '${failure[0]}': ${failure[1].join(', ')}`);
-	    }
-	    throw new Error("Tests failed");
-	}
-    });
-} catch (e) {
-    console.error(e.stack);
-    throw e;
+let results = runTests();
+if (OPTIONS.stage3) {
+    checkCompilerFixpoint().catch((e) => { throw e; });
 }
+results.then((failures) => {
+    if (failures.length > 0) {
+        console.info("Some tests failed:");
+        for (const failure of failures) {
+            console.info(`    '${failure[0]}': ${failure[1].join(', ')}`);
+        }
+        process.exit(1);
+    }
+});

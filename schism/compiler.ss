@@ -113,6 +113,7 @@
        (define (caaar p) (car (caar p)))
        (define (caadr p) (car (cadr p)))
        (define (cadar p) (car (cdar p)))
+       (define (cddar p) (car (cdar p)))
        (define (caddr p) (car (cddr p)))
        (define (cdadr p) (cdr (cadr p)))
        (define (cdddr p) (cdr (cddr p)))
