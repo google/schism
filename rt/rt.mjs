@@ -104,8 +104,15 @@ function rt(engine) {
 	    const byte = js_from_scheme(ptr).charCodeAt(0);
 	    engine.output_data.push(byte);
 	},
-      'error': function(where, what) {
+	'error': function(where, what) {
 	    throw new SchemeError(engine.schemeToString(where), engine.schemeToString(what));
+	},
+	'%log-char': c => {
+	    engine.log += engine.jsFromScheme(c);
+	},
+	'%flush-log': () => {
+	    console.info(engine.log);
+	    engine.log = "";
 	}
     }
 }
@@ -124,6 +131,7 @@ export class Engine {
     this.input_index = 0;
     this.output_data = [];
     this.modules = [];
+    this.log = "";
   }
 
   async loadWasmModule(bytes) {
