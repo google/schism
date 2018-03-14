@@ -79,7 +79,7 @@
           ((boolean? x) (%display-raw-string "<!display boolean unimplemented!>"))
           ((number? x) (%display-raw-string "<!display number unimplemented!>"))
           ((char? x) (%display-raw-string "<!display char unimplemented!>"))
-          ((string? x) (%display-raw-string x))
+          ((string? x) (begin (%log-char #\") (%display-raw-string x) (%log-char #\")))
           (else (%display-raw-string "<!display unknown unimplemented!>"))))
        (define (%display-raw-string s)
          (%display-chars-as-string (string->list s)))
@@ -200,11 +200,8 @@
              (or (%find-symbol-by-name s (%symbol-table))
                  (let ((x (cons s (%symbol-table))))
                    (begin
-                     (display "adding symbol: ")
-                     (display s)
-                     (newline)
                      (set-cdr! (%base-pair) x)
-                          (%set-tag x ,(symbol-tag)))))
+                     (%set-tag x ,(symbol-tag)))))
              (error 'string->symbol "string->symbol: not a string")))
        (define (gensym t) ;; Creates a brand new symbol that cannot be reused
          (let ((x (cons '() (%symbol-table))))
@@ -594,7 +591,7 @@
         (cons (compile-expr (car exprs) env) (compile-exprs (cdr exprs) env))))
   (define (compile-begin exprs env)
     (cond
-     ((null? exprs) `(i32.const ,(constant-void)))
+     ((null? exprs) `((i32.const ,(constant-void))))
      ((and (pair? exprs) (null? (cdr exprs))) `(,(compile-expr (car exprs) env)))
      ((pair? exprs)
       (cons `(drop ,(compile-expr (car exprs) env))
