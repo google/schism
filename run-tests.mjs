@@ -26,7 +26,7 @@ import fs from 'fs';
 import process from 'process';
 import util from 'util';
 
-Error.stackTraceLimit = 10;
+Error.stackTraceLimit = 20;
 
 async function runTest(name, compile = compileWithHostScheme) {
     const bytes = fs.readFileSync(name);
