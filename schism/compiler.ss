@@ -83,7 +83,8 @@
 	     #f
 	     (let ((_ (%log-char (car chars))))
 	       (%display-chars-as-string (cdr chars)))))
-       (define (write x) x)
+       ;; TODO: display and write actually have different behavior
+       (define (write x) (display x))
        (define (newline)
 	 (%flush-log))
        (define (%base-pair) (%set-tag ,(allocation-pointer) ,(pair-tag)))
