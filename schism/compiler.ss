@@ -28,6 +28,7 @@
   (define (constant-true) (tag-constant 1 (constant-tag)))
   (define (constant-null) (tag-constant 2 (constant-tag)))
   (define (constant-eof) (tag-constant 3 (constant-tag)))
+  (define (constant-void) (tag-constant 4 (constant-tag)))
   (define (pair-tag) 2)
   (define (char-tag) 3)
   (define (string-tag) 4)
@@ -83,10 +84,10 @@
        (define (%display-raw-string s)
          (%display-chars-as-string (string->list s)))
        (define (%display-chars-as-string chars)
-	 (if (null? chars)
-	     #f
-	     (let ((_ (%log-char (car chars))))
-	       (%display-chars-as-string (cdr chars)))))
+         (if (null? chars)
+             #f
+             (let ((_ (%log-char (car chars))))
+               (%display-chars-as-string (cdr chars)))))
        ;; TODO: display and write actually have different behavior
        (define (write x) (display x))
        (define (newline)
@@ -573,10 +574,18 @@
     (if (null? exprs)
         '()
         (cons (compile-expr (car exprs) env) (compile-exprs (cdr exprs) env))))
+  (define (compile-begin exprs env)
+    (cond
+     ((null? exprs) `(ptr ,(constant-void)))
+     ((and (pair? exprs) (null? (cdr exprs))) `(,(compile-expr (car exprs) env)))
+     ((pair? exprs)
+      (cons `(drop ,(compile-expr (car exprs) env))
+	    (compile-exprs (cdr exprs) env)))
+     (else (error 'compile-begin "compile-begin: invalid begin"))))
   (define (compile-expr expr env)
     (let ((tag (car expr)))
       (cond
-       ((eq? tag 'begin) (cons 'begin (compile-exprs (cdr expr) env)))
+       ((eq? tag 'begin) (cons 'begin (compile-begin (cdr expr) env)))
        ((eq? tag 'number) (cons 'i32.const (cdr expr)))
        ((eq? tag 'ptr) (cons 'i32.const (cdr expr)))
        ((eq? tag 'var) `(get-local ,(cdr (assq (cadr expr) env))))
@@ -771,7 +780,7 @@
   (define (wasm-simple-op? op)
     (or (eq? op 'i32.and) (eq? op 'i32.add) (eq? op 'i32.sub) (eq? op 'i32.mul)
         (eq? op 'i32.or) (eq? op 'i32.eq) (eq? op 'i32.ne) (eq? op 'i32.not)
-        (eq? op 'i32.lt_s) (eq? op 'i32.shr_s) (eq? op 'i32.shl)))
+        (eq? op 'i32.lt_s) (eq? op 'i32.shr_s) (eq? op 'i32.shl) (eq? op 'drop)))
 
   (define (resolve-calls-exprs exprs env)
     (if (null? exprs)
@@ -994,6 +1003,8 @@
         (encode-simple-op #x74 expr))
        ((eq? tag 'i32.shr_s)
         (encode-simple-op #x75 expr))
+       ((eq? tag 'drop)
+	(encode-simple-op #x1a expr))
        (else
         (let ((_ (trace-value expr)))
           (error 'encode-expr "Unrecognized expr"))))))
