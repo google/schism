@@ -582,7 +582,7 @@
         (cons (compile-expr (car exprs) env) (compile-exprs (cdr exprs) env))))
   (define (compile-begin exprs env)
     (cond
-     ((null? exprs) `(i32.const ,(constant-void)))
+     ((null? exprs) `((i32.const ,(constant-void))))
      ((and (pair? exprs) (null? (cdr exprs))) `(,(compile-expr (car exprs) env)))
      ((pair? exprs)
       (cons `(drop ,(compile-expr (car exprs) env))
