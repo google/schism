@@ -146,16 +146,12 @@
 		 (assq x (cdr ls)))
 	     (error 'assq "assq: not a pair")))
        (define (length ls)
-         (let* ((_ (display "length"))
-                (_ (newline)))
-           (cond
-            ((null? ls) 0)
-            ((pair? ls) (+ 1 (length (cdr ls))))
-            (else (error 'length "length: argument is not a proper list")))))
+         (cond
+          ((null? ls) 0)
+          ((pair? ls) (+ 1 (length (cdr ls))))
+          (else (error 'length "length: argument is not a proper list"))))
        (define (append a b)
-         (let* ((_ (display "append"))
-                (_ (newline)))
-           (if (null? a) b (cons (car a) (append (cdr a) b)))))
+         (if (null? a) b (cons (car a) (append (cdr a) b))))
        (define (read-ptr p offset)
          (%read-mem (%as-fixnum p) offset))
        (define (char->integer c) (%as-fixnum c)) ;; TODO: check tag
@@ -184,14 +180,17 @@
        (define (string->list s)
          (if (string? s)
              (%set-tag s ,(pair-tag))
-             (error 'string->list "string->list: not a string")))
+             ;; calling error here can lead to an infinite loop, so we
+             ;; generate an unreachable instead.
+             (%unreachable)))
        (define (string-equal? s1 s2)
          (list-all-eq? (string->list s1) (string->list s2)))
        (define (%find-symbol-by-name s table)
          (if (or (zero? table) (null? table))
              #f
 	     (if (pair? table)
-		 (if (string-equal? s (car table))
+                 ;; (car table) is not a string in the case of gensyms
+		 (if (and (string? (car table)) (string-equal? s (car table)))
 		     (%set-tag table ,(symbol-tag))
 		     (%find-symbol-by-name s (cdr table)))
 		 (error '%find-symbol-by-name "%find-symbol-by-name: corrupt symbol table"))))
@@ -202,7 +201,9 @@
                    (begin
                      (set-cdr! (%base-pair) x)
                      (%set-tag x ,(symbol-tag)))))
-             (error 'string->symbol "string->symbol: not a string")))
+             ;; calling error here can lead to an infinite loop, so we
+             ;; generate an unreachable instead.
+             (%unreachable)))
        (define (gensym t) ;; Creates a brand new symbol that cannot be reused
          (let ((x (cons '() (%symbol-table))))
            (begin (set-cdr! (%base-pair) x)
@@ -340,7 +341,7 @@
         (eq? x '%set-tag) (eq? x '%as-fixnum) (eq? x 'bitwise-and)
         (eq? x 'bitwise-not) (eq? x 'bitwise-ior) (eq? x 'bitwise-arithmetic-shift-left)
         (eq? x 'bitwise-arithmetic-shift-right) (eq? x 'eof-object) (eq? x '+) (eq? x '*)
-        (eq? x '-) (eq? x '%set-car!) (eq? x '%set-cdr!)))
+        (eq? x '-) (eq? x '%set-car!) (eq? x '%set-cdr!) (eq? x '%unreachable)))
 
   ;; ====================== ;;
   ;; Parsing                ;;
@@ -664,6 +665,8 @@
               (shift-amount (compile-expr (caddr expr) env)))
           `(i32.and (i32.shr_s ,num (i32.shr_s ,shift-amount (i32.const ,(tag-size))))
                     (i32.const ,(fixnum-mask)))))
+       ((eq? tag '%unreachable)
+        '(unreachable))
        (else (let ((_ (display expr)))
                (let ((_ (newline)))
                  (error 'compile-expr "Unrecognized expression")))))))
@@ -796,7 +799,8 @@
   (define (wasm-simple-op? op)
     (or (eq? op 'i32.and) (eq? op 'i32.add) (eq? op 'i32.sub) (eq? op 'i32.mul)
         (eq? op 'i32.or) (eq? op 'i32.eq) (eq? op 'i32.ne) (eq? op 'i32.not)
-        (eq? op 'i32.lt_s) (eq? op 'i32.shr_s) (eq? op 'i32.shl) (eq? op 'drop)))
+        (eq? op 'i32.lt_s) (eq? op 'i32.shr_s) (eq? op 'i32.shl) (eq? op 'drop)
+        (eq? op 'unreachable)))
 
   (define (resolve-calls-exprs exprs env)
     (if (null? exprs)
@@ -1021,6 +1025,8 @@
         (encode-simple-op #x75 expr))
        ((eq? tag 'drop)
 	(encode-simple-op #x1a expr))
+       ((eq? tag 'unreachable)
+        (encode-simple-op #x00 expr))
        (else
         (let ((_ (trace-value expr)))
           (error 'encode-expr "Unrecognized expr"))))))
