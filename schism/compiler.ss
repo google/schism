@@ -711,12 +711,12 @@
   (define (compile-function fn)
     (if (eq? (car fn) '%wasm-import)
         fn
-        (let ((args (number-variables (cdar fn) 0)))
-          (let ((body (compile-expr (cadr fn) args)))
-            `(,(- (count-locals body) (length args)) ;; Number of local variables
-              ,body)))))
+        (let* ((args (number-variables (cdar fn) 0))
+               (body (compile-expr (cadr fn) args)))
+          `(,(max (count-locals body) (length args)) ;; Number of local variables
+            ,body))))
 
-  ;; Determines how many instructions were used in a body.
+  ;; Determines how many locals were used in a body.
   (define (count-locals body)
     (let ((tag (car body)))
       (cond
@@ -724,7 +724,7 @@
         (count-locals-exprs (cdr body)))
        ((eq? tag 'call)
         (count-locals-exprs (cddr body)))
-       ((eq? tag 'get-local) 0)
+       ((eq? tag 'get-local) (+ 1 (cadr body)))
        ((eq? tag 'set-local) (+ 1 (cadr body)))
        ((wasm-simple-op? tag)
         (count-locals-exprs (cdr body)))
@@ -733,9 +733,8 @@
         (count-locals-exprs (cddr body)))
        ((eq? tag 'if)
         (count-locals-exprs (cdr body)))
-       (else
-        (let ((_ (trace-value body)))
-          (error 'count-locals "Unrecognized expression"))))))
+       (else (begin (trace-value body)
+                    (error 'count-locals "count-locals: Unrecognized expression"))))))
   (define (count-locals-exprs exprs)
     (if (null? exprs)
         0
