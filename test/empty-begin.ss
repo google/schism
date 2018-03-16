@@ -13,12 +13,11 @@
 ;; limitations under the License.
 
 (library
-    (let-star)
+    (begin)
   (export do-test)
   (import (rnrs))
 
+  (define (foo) (begin))
+  
   (define (do-test)
-    (let* ((x '())
-	   (y #f)
-	   (y #t))
-      y)))
+    (begin (foo) #t)))

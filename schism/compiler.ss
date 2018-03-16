@@ -29,6 +29,7 @@
   (define (constant-true) (tag-constant 1 (constant-tag)))
   (define (constant-null) (tag-constant 2 (constant-tag)))
   (define (constant-eof) (tag-constant 3 (constant-tag)))
+  (define (constant-void) (tag-constant 4 (constant-tag)))
   (define (pair-tag) 2)
   (define (char-tag) 3)
   (define (string-tag) 4)
@@ -68,15 +69,19 @@
        (define (display x)
          (cond
           ((pair? x)
-           (let ((_ (%display-raw-string "(")))
-             (let ((_ (display (car x))))
-               (let ((_ (%display-raw-string " . ")))
-                 (let ((_ (display (cdr x))))
-                   (%display-raw-string ")"))))))
+           (begin (%display-raw-string "(")
+                  (display (car x))
+                  (%display-raw-string " . ")
+                  (display (cdr x))
+                  (%display-raw-string ")")))
           ((null? x)
            (%display-raw-string "()"))
           ((symbol? x) (%display-raw-string (symbol->string x)))
-          (else (%display-raw-string "<!unimplemented!>"))))
+          ((boolean? x) (%display-raw-string (if x "#t" "#f")))
+          ((number? x) (%display-raw-string "<!display number unimplemented!>"))
+          ((char? x) (%display-raw-string "<!display char unimplemented!>"))
+          ((string? x) (begin (%log-char #\") (%display-raw-string x) (%log-char #\")))
+          (else (%display-raw-string "<!display unknown unimplemented!>"))))
        (define (%display-raw-string s)
          (%display-chars-as-string (string->list s)))
        (define (%display-chars-as-string chars)
@@ -84,7 +89,8 @@
              #f
              (let ((_ (%log-char (car chars))))
                (%display-chars-as-string (cdr chars)))))
-       (define (write x) x)
+       ;; TODO: display and write actually have different behavior
+       (define (write x) (display x))
        (define (newline)
          (%flush-log))
        (define (%base-pair) (%set-tag ,(allocation-pointer) ,(pair-tag)))
@@ -98,14 +104,26 @@
              (%set-tag (+ new-pointer ,(* 2 (word-size))) tag))))
        (define (cons a d)
          (init-pair (%alloc ,(pair-tag) 2) a d))
+       (define (set-car! p a)
+	 (if (pair? p)
+	     (%set-car! p a)
+	     (error 'set-car! "set-car!: not a pair")))
+       (define (set-cdr! p d)
+	 (if (pair? p)
+	     (%set-cdr! p d)
+	     (error 'set-cdr! "set-cdr!: not a pair")))
        (define (init-pair p a d)
          (set-car! p a)
          (set-cdr! p d)
          p)
        (define (car p)
-         (read-ptr p 0))
+	 (if (pair? p)
+	     (read-ptr p 0)
+	     (error 'car "car: not a pair")))
        (define (cdr p)
-         (read-ptr p ,(word-size)))
+	 (if (pair? p)
+	     (read-ptr p ,(word-size))
+	     (error 'cdr "cdr: not a pair")))
        (define (caar p) (car (car p)))
        (define (cadr p) (car (cdr p)))
        (define (cdar p) (cdr (car p)))
@@ -124,14 +142,15 @@
        (define (cdaddr p) (cdr (caddr p)))
        (define (assq x ls)
          (if (pair? ls)
-             (if (eq? x (caar ls))
-                 (car ls)
-                 (assq x (cdr ls)))
-             (error 'assq "not a pair")))
+	     (if (eq? x (caar ls))
+		 (car ls)
+		 (assq x (cdr ls)))
+	     (error 'assq "assq: not a pair")))
        (define (length ls)
-         (if (null? ls)
-             0
-             (+ 1 (length (cdr ls)))))
+         (cond
+          ((null? ls) 0)
+          ((pair? ls) (+ 1 (length (cdr ls))))
+          (else (error 'length "length: argument is not a proper list"))))
        (define (append a b)
          (if (null? a) b (cons (car a) (append (cdr a) b))))
        (define (read-ptr p offset)
@@ -153,32 +172,47 @@
        (define (char-ci<? c1 c2)
          (< (char->integer c1) (char->integer c2)))
        (define (list->string ls)
-         ;; For now we represent strings as lists of characters. That
-         ;; means converting between the two is just a matter of
-         ;; changing the tags.
-         (%set-tag ls ,(string-tag)))
+         (if (pair? ls)
+             ;; For now we represent strings as lists of characters. That
+             ;; means converting between the two is just a matter of
+             ;; changing the tags.
+             (%set-tag ls ,(string-tag))
+             (error 'list->string "list->string: not a pair")))
        (define (string->list s)
-         (%set-tag s ,(pair-tag)))
+         (if (string? s)
+             (%set-tag s ,(pair-tag))
+             ;; calling error here can lead to an infinite loop, so we
+             ;; generate an unreachable instead.
+             (%unreachable)))
        (define (string-equal? s1 s2)
          (list-all-eq? (string->list s1) (string->list s2)))
        (define (%find-symbol-by-name s table)
          (if (or (zero? table) (null? table))
              #f
-             (if (string-equal? s (car table))
-                 (%set-tag table ,(symbol-tag))
-                 (%find-symbol-by-name s (cdr table)))))
+	     (if (pair? table)
+                 ;; (car table) is not a string in the case of gensyms
+		 (if (and (string? (car table)) (string-equal? s (car table)))
+		     (%set-tag table ,(symbol-tag))
+		     (%find-symbol-by-name s (cdr table)))
+		 (error '%find-symbol-by-name "%find-symbol-by-name: corrupt symbol table"))))
        (define (string->symbol s)
-         (or (%find-symbol-by-name s (%symbol-table))
-             (let ((x (cons s (%symbol-table))))
-               (begin (set-cdr! (%base-pair) x)
-                      (%set-tag x ,(symbol-tag))))))
+         (if (string? s)
+             (or (%find-symbol-by-name s (%symbol-table))
+                 (let ((x (cons s (%symbol-table))))
+                   (begin
+                     (set-cdr! (%base-pair) x)
+                     (%set-tag x ,(symbol-tag)))))
+             ;; calling error here can lead to an infinite loop, so we
+             ;; generate an unreachable instead.
+             (%unreachable)))
        (define (gensym t) ;; Creates a brand new symbol that cannot be reused
          (let ((x (cons '() (%symbol-table))))
            (begin (set-cdr! (%base-pair) x)
                   (%set-tag x ,(symbol-tag)))))
        (define (symbol->string x)
-         ;; TODO: typecheck
-         (car (%set-tag x ,(pair-tag))))
+	 (if (symbol? x)
+	     (car (%set-tag x ,(pair-tag)))
+	     (error 'symbol->string "symbol->string: not a symbol")))
        (define (list-all-eq? a b)
          (if (null? a)
              (null? b)
@@ -313,8 +347,8 @@
   (define (intrinsic? x)
     (memq x '(%read-mem %store-mem %get-tag %set-tag %as-fixnum bitwise-and
                         bitwise-not bitwise-ior bitwise-arithmetic-shift-left
-                        bitwise-arithmetic-shift-right eof-object + * - set-car!
-                        set-cdr!)))
+                        bitwise-arithmetic-shift-right eof-object + * - %set-car!
+                        %set-cdr! %unreachable)))
 
   (define (relop? x)
     (memq x '(neq?)))
@@ -356,7 +390,7 @@
            ((eq? tag 'let*)
             (let ((bindings (cadr expr)))
               (if (null? bindings)
-                  (caddr expr)
+                  (expand-macros (caddr expr))
                   ;; bindings: ((x e) . rest)
                   (let ((x (caar bindings))
                         (e (cadar bindings))
@@ -625,10 +659,18 @@
     (if (null? exprs)
         '()
         (cons (compile-expr (car exprs) env) (compile-exprs (cdr exprs) env))))
+  (define (compile-begin exprs env)
+    (cond
+     ((null? exprs) `((i32.const ,(constant-void))))
+     ((and (pair? exprs) (null? (cdr exprs))) `(,(compile-expr (car exprs) env)))
+     ((pair? exprs)
+      (cons `(drop ,(compile-expr (car exprs) env))
+	    (compile-begin (cdr exprs) env)))
+     (else (error 'compile-begin "compile-begin: invalid begin"))))
   (define (compile-expr expr env)
     (let ((tag (car expr)))
       (cond
-       ((eq? tag 'begin) (cons 'begin (compile-exprs (cdr expr) env)))
+       ((eq? tag 'begin) (cons 'begin (compile-begin (cdr expr) env)))
        ((eq? tag 'number) (cons 'i32.const (cdr expr)))
        ((eq? tag 'ptr) (cons 'i32.const (cdr expr)))
        ((eq? tag 'var) `(get-local ,(cdr (assq (cadr expr) env))))
@@ -643,14 +685,16 @@
           `(begin
              ,(compile-bindings (cadr expr) env index)
              ,(compile-expr (caddr expr) (bindings->env (cadr expr) env index)))))
-       ((eq? tag 'set-car!)
+       ((eq? tag '%set-car!)
         (let ((p (compile-expr (cadr expr) env))
               (x (compile-expr (caddr expr) env)))
-          `(i32.store (offset 0) (i32.and ,p (i32.const ,(fixnum-mask))) ,x)))
-       ((eq? tag 'set-cdr!)
+          `(begin (i32.store (offset 0) (i32.and ,p (i32.const ,(fixnum-mask))) ,x)
+		  (i32.const ,(constant-void)))))
+       ((eq? tag '%set-cdr!)
         (let ((p (compile-expr (cadr expr) env))
               (x (compile-expr (caddr expr) env)))
-          `(i32.store (offset ,(word-size)) (i32.and ,p (i32.const ,(fixnum-mask))) ,x)))
+          `(begin (i32.store (offset ,(word-size)) (i32.and ,p (i32.const ,(fixnum-mask))) ,x)
+		  (i32.const ,(constant-void)))))
        ((eq? tag '+)
         (let ((a (compile-expr (cadr expr) env))
               (b (compile-expr (caddr expr) env)))
@@ -690,6 +734,8 @@
               (shift-amount (compile-expr (caddr expr) env)))
           `(i32.and (i32.shr_s ,num (i32.shr_s ,shift-amount (i32.const ,(tag-size))))
                     (i32.const ,(fixnum-mask)))))
+       ((eq? tag '%unreachable)
+        '(unreachable))
        (else (let ((_ (display expr)))
                (let ((_ (newline)))
                  (error 'compile-expr "compile-expr: Unrecognized expression")))))))
@@ -737,12 +783,12 @@
   (define (compile-function fn)
     (if (eq? (car fn) '%wasm-import)
         fn
-        (let ((args (number-variables (cdar fn) 0)))
-          (let ((body (compile-expr (cadr fn) args)))
-            `(,(- (count-locals body) (length args)) ;; Number of local variables
-              ,body)))))
+        (let* ((args (number-variables (cdar fn) 0))
+               (body (compile-expr (cadr fn) args)))
+          `(,(max (count-locals body) (length args)) ;; Number of local variables
+            ,body))))
 
-  ;; Determines how many instructions were used in a body.
+  ;; Determines how many locals were used in a body.
   (define (count-locals body)
     (let ((tag (car body)))
       (cond
@@ -750,7 +796,7 @@
         (count-locals-exprs (cdr body)))
        ((eq? tag 'call)
         (count-locals-exprs (cddr body)))
-       ((eq? tag 'get-local) 0)
+       ((eq? tag 'get-local) (+ 1 (cadr body)))
        ((eq? tag 'set-local) (+ 1 (cadr body)))
        ((wasm-simple-op? tag)
         (count-locals-exprs (cdr body)))
@@ -759,9 +805,8 @@
         (count-locals-exprs (cddr body)))
        ((eq? tag 'if)
         (count-locals-exprs (cdr body)))
-       (else
-        (let ((_ (trace-value body)))
-          (error 'count-locals "count-locals: Unrecognized expression"))))))
+       (else (begin (trace-value body)
+                    (error 'count-locals "count-locals: Unrecognized expression"))))))
   (define (count-locals-exprs exprs)
     (if (null? exprs)
         0
@@ -823,7 +868,8 @@
   (define (wasm-simple-op? op)
     (or (eq? op 'i32.and) (eq? op 'i32.add) (eq? op 'i32.sub) (eq? op 'i32.mul)
         (eq? op 'i32.or) (eq? op 'i32.eq) (eq? op 'i32.ne) (eq? op 'i32.not)
-        (eq? op 'i32.lt_s) (eq? op 'i32.shr_s) (eq? op 'i32.shl)))
+        (eq? op 'i32.lt_s) (eq? op 'i32.shr_s) (eq? op 'i32.shl) (eq? op 'drop)
+        (eq? op 'unreachable)))
 
   (define (resolve-calls-exprs exprs env)
     (if (null? exprs)
@@ -1046,6 +1092,10 @@
         (encode-simple-op #x74 expr))
        ((eq? tag 'i32.shr_s)
         (encode-simple-op #x75 expr))
+       ((eq? tag 'drop)
+	(encode-simple-op #x1a expr))
+       ((eq? tag 'unreachable)
+        (encode-simple-op #x00 expr))
        (else
         (let ((_ (trace-value expr)))
           (error 'encode-expr "encode-expr: Unrecognized expr"))))))
@@ -1065,6 +1115,17 @@
   (define (wasm-code-section codes)
     (make-section 10 (make-vec (length codes) (encode-codes codes))))
 
+  (define (wasm-name-section names)
+    (make-section 0 (cons (encode-string "name")
+                          (make-section 1 ;; 1 for function name subsection
+                                        (make-vec (length names)
+                                                  (encode-name-maps names 0))))))
+  (define (encode-name-maps names index)
+    (if (null? names)
+        '()
+        (cons (cons index (encode-string (symbol->string (car names))))
+                (encode-name-maps (cdr names) (+ 1 index)))))
+
   ;; Takes a library and returns a list of the corresponding Wasm module
   ;; bytes
   (define (compile-library library)
@@ -1080,12 +1141,13 @@
                 (imports (gather-imports compiled-module))
                 (functions (resolve-calls compiled-module function-names)))
             (cons (wasm-header)
-                  (cons (wasm-type-section types)
-                        (cons (wasm-import-section imports)
-                              (cons (wasm-function-section (number-list functions
-                                                                        (length imports)))
-                                    (cons (wasm-export-section exports)
-                                          (wasm-code-section functions)))))))))))
+                  (cons (cons (wasm-type-section types)
+                              (cons (wasm-import-section imports)
+                                    (cons (wasm-function-section (number-list functions
+                                                                              (length imports)))
+                                          (cons (wasm-export-section exports)
+                                                (wasm-code-section functions)))))
+                        (wasm-name-section function-names))))))))
   (define (write-bytes ls)
     (cond
      ((null? ls) #t)
