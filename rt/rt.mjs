@@ -72,7 +72,7 @@ function fixnum_from_number(n) {
 
 class SchemeError extends Error {
   constructor(where, what) {
-    super(`Scheme runtime error: ${what}`);
+    super(`Scheme runtime error in ${where}: ${what}`);
     this.where = where
     this.what = what
   }
@@ -177,15 +177,15 @@ export class Engine {
 	const tag = extract_tag(ptr);
 
 	if (tag == TAGS.symbol) {
-	    const sym_val = this.carOf(tag);
-	    if (replace_tag(sym_val, TAGS.constant) == CONSTANTS[null]) {
+	    const sym_val = this.carOf(ptr);
+	    if (sym_val == CONSTANTS[null]) {
 		return `<gensym #{extract_value(ptr)}>`;
 	    }
-	    return this.schemeToString(replace_tag(sym_val, TAGS.string));
+	    return this.schemeToString(sym_val);
 	} else if (tag == TAGS.string) {
 	    let x = ptr;
 	    let s = "";
-	    while (replace_tag(x, TAGS.constant) != CONSTANTS[null]) {
+	    while (x != CONSTANTS[null]) {
 		const c = this.jsFromScheme(this.carOf(x));
 		s += c;
 		x = this.cdrOf(x);
