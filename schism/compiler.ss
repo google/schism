@@ -74,11 +74,19 @@
           ((null? x)
            (%display-raw-string "()"))
           ((symbol? x) (%display-raw-string (symbol->string x)))
-          ((boolean? x) (%display-raw-string "<!display boolean unimplemented!>"))
-          ((number? x) (%display-raw-string "<!display number unimplemented!>"))
-          ((char? x) (%display-raw-string "<!display char unimplemented!>"))
+          ((boolean? x) (%display-raw-string (if x "#t" "#f")))
+          ((number? x) (begin (%display-leading-digits x) (%display-least-significant-digit x)))
+          ((char? x) (begin (%log-char #\#) (%log-char #\\) (%log-char x)))
           ((string? x) (begin (%log-char #\") (%display-raw-string x) (%log-char #\")))
           (else (%display-raw-string "<!display unknown unimplemented!>"))))
+       (define (%display-leading-digits n)
+         (if (zero? n)
+             (begin)
+             (begin (%display-leading-digits (/ n 10))
+                    (%display-least-significant-digit n))))
+       (define (%display-least-significant-digit n)
+         (let ((n (- n (* 10 (/ n 10))))) ;; apparently we don't support mod yet
+           (%log-char (integer->char (+ (char->integer #\0) n)))))
        (define (%display-pair-tail x)
          (cond
           ((null? x) (%display-raw-string ")"))
@@ -359,7 +367,7 @@
   (define (intrinsic? x)
     (memq x '(%read-mem %store-mem %get-tag %set-tag %as-fixnum bitwise-and
                         bitwise-not bitwise-ior bitwise-arithmetic-shift-left
-                        bitwise-arithmetic-shift-right eof-object + * - %set-car!
+                        bitwise-arithmetic-shift-right eof-object + * - / %set-car!
                         %set-cdr! %unreachable)))
 
   (define (relop? x)
@@ -665,6 +673,13 @@
               (b (compile-expr (caddr expr) env)))
           ;; Shift only one of them and we don't have to shift back when we're done.
           `(i32.mul (i32.shr_s ,a (i32.const ,(tag-size))) ,b)))
+       ((eq? tag '/)
+        (let ((a (compile-expr (cadr expr) env))
+              (b (compile-expr (caddr expr) env)))
+          ;; Shift only one of them and we don't have to shift back when we're done.
+          `(i32.shl (i32.div_s (i32.shr_s ,a (i32.const ,(tag-size)))
+                               (i32.shr_s ,b (i32.const ,(tag-size))))
+                    (i32.const ,(tag-size)))))
        ((eq? tag '%as-fixnum)
         `(i32.and ,(compile-expr (cadr expr) env) (i32.const ,(fixnum-mask))))
        ((eq? tag '%set-tag)
@@ -825,7 +840,7 @@
         (cons i (number-list (cdr ls) (+ 1 i)))))
 
   (define (wasm-simple-op? op)
-    (or (eq? op 'i32.and) (eq? op 'i32.add) (eq? op 'i32.sub) (eq? op 'i32.mul)
+    (or (eq? op 'i32.and) (eq? op 'i32.add) (eq? op 'i32.sub) (eq? op 'i32.mul) (eq? op 'i32.div_s)
         (eq? op 'i32.or) (eq? op 'i32.eq) (eq? op 'i32.ne) (eq? op 'i32.not)
         (eq? op 'i32.lt_s) (eq? op 'i32.shr_s) (eq? op 'i32.shl) (eq? op 'drop)
         (eq? op 'unreachable)))
@@ -1041,6 +1056,8 @@
         (encode-simple-op #x6b expr))
        ((eq? tag 'i32.mul)
         (encode-simple-op #x6c expr))
+       ((eq? tag 'i32.div_s)
+        (encode-simple-op #x6d expr))
        ((eq? tag 'i32.and)
         (encode-simple-op #x71 expr))
        ((eq? tag 'i32.not)
