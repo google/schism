@@ -165,12 +165,12 @@
              (if (eq? x (caar ls))
                  (car ls)
                  (assq x (cdr ls)))
-             (error 'assq "assq: not a pair")))
+             (begin (display x) (newline) (error 'assq "not a pair"))))
        (define (length ls)
          (cond
           ((null? ls) 0)
           ((pair? ls) (+ 1 (length (cdr ls))))
-          (else (error 'length "length: argument is not a proper list"))))
+          (else (error 'length "argument is not a proper list"))))
        (define (append a b)
          (if (null? a) b (cons (car a) (append (cdr a) b))))
        (define (read-ptr p offset)
@@ -214,7 +214,7 @@
                  (if (and (string? (car table)) (string-equal? s (car table)))
                      (%set-tag table ,(symbol-tag))
                      (%find-symbol-by-name s (cdr table)))
-                 (error '%find-symbol-by-name "%find-symbol-by-name: corrupt symbol table"))))
+                 (error '%find-symbol-by-name "corrupt symbol table"))))
        (define (string->symbol s)
          (if (string? s)
              (or (%find-symbol-by-name s (%symbol-table))
@@ -233,7 +233,7 @@
          (if (symbol? x)
              (let ((s (car (%set-tag x ,(pair-tag)))))
                (if (null? s) "<gensym>" s))
-             (error 'symbol->string "symbol->string: not a symbol")))
+             (error 'symbol->string "not a symbol")))
        (define (list-all-eq? a b)
          (if (null? a)
              (null? b)
@@ -480,7 +480,7 @@
      (else
       (let ((_ (display expr)))
         (let ((_ (newline)))
-          (error 'parse-expr "parse-expr: Unrecognized expression"))))))
+          (error 'parse-expr "Unrecognized expression"))))))
   (define (parse-pred expr)
     (cond
      ((boolean? expr) `(bool ,expr))
@@ -521,7 +521,7 @@
        (else
         (let ((_ (display function)))
           (let ((_ (newline)))
-            (error 'parse-function "Invalid top-level declaration")))))))
+            (error 'parse-function "invalid top-level declaration")))))))
   (define (parse-functions functions)
     (if (null? functions)
         '()
@@ -546,7 +546,7 @@
           `(cons ,(expand-quote (car expr) quasi) ,(expand-quote (cdr expr) quasi))))
      (else
       (let ((_ (trace-value expr)))
-        (error 'expand-quote "Invalid datum")))))
+        (error 'expand-quote "invalid datum")))))
 
   (define (args->types args)
     (if (null? args)
@@ -586,15 +586,8 @@
         `(call ,(cadr expr) . ,(convert-closures-expr* (cddr expr))))
        ((or (eq? tag 'var) (literal? expr))
         expr)
-       (#t (begin (write "convert-closures-expr unrecognized: ")
-                  (display expr)
-                  (newline)
-                  expr))
-       (#t expr)
-       (else
-        (let  ((_ (display expr)))
-          (let ((_ (newline)))
-            (error 'convert-closures-expr "convert-closures-expr: Unrecognized expr")))))))
+       (else (begin (display expr) (newline)
+                    (error 'convert-closures-expr "unrecognized expr"))))))
   (define (convert-closures-bindings bindings)
     (if (null? bindings)
         '()
@@ -658,11 +651,11 @@
                         (display expr)
                         (newline)
                         (error 'apply-representation-expr "Unrecognized expr")))))
-        (begin (write "warning in apply-representation-expr: `")
+        (begin (write "error in apply-representation-expr: `")
                (display expr)
                (write "` is malformed")
                (newline)
-               '(%unreachable))))
+               (error 'apply-representation-expr "malformed expr"))))
   (define (apply-representation-expr* expr*)
     (if (null? expr*)
         '()
@@ -785,7 +778,7 @@
         '(unreachable))
        (else (let ((_ (display expr)))
                (let ((_ (newline)))
-                 (error 'compile-expr "compile-expr: Unrecognized expression")))))))
+                 (error 'compile-expr "unrecognized expression")))))))
   (define (compile-pred expr env)
     (let ((op (car expr)))
       (cond
@@ -853,7 +846,7 @@
        ((eq? tag 'if)
         (count-locals-exprs (cdr body)))
        (else (begin (trace-value body)
-                    (error 'count-locals "count-locals: Unrecognized expression"))))))
+                    (error 'count-locals "unrecognized expression"))))))
   (define (count-locals-exprs exprs)
     (if (null? exprs)
         0
@@ -954,7 +947,7 @@
           (cons tag args)))
        (else
         (let ((_ (trace-value expr)))
-          (error 'resolve-calls-expr "resolve-calls-expr: Unrecognized expression"))))))
+          (error 'resolve-calls-expr "unrecognized expression"))))))
   (define (resolve-calls-fn function env)
     `(,(car function) ,(resolve-calls-expr (cadr function) env)))
   (define (resolve-calls functions env)
@@ -1023,7 +1016,7 @@
      ;; functions are (fn (t1 ...) (t2 ...)), for t1 ... -> t2 ...
      ((and (pair? type) (eq? (car type) 'fn))
       (cons #x60 (cons (encode-type-vec (cadr type)) (encode-type-vec (caddr type)))))
-     (else (let ((_ (trace-value type))) (error 'encode-type "Unrecognized type")))))
+     (else (let ((_ (trace-value type))) (error 'encode-type "unrecognized type")))))
 
   (define (wasm-type-section types)
     (make-section 1 (encode-type-vec types)))
@@ -1063,7 +1056,7 @@
       (cons (encode-string (caddr export)) (cons #x00 (number->leb-u8-list (cadr export)))))
      (else
       (let ((_ (trace-value export)))
-        (error 'encode-export "Unrecognized export")))))
+        (error 'encode-export "unrecognized export")))))
   (define (encode-export-contents exports)
     (if (null? exports)
         '()
@@ -1147,7 +1140,7 @@
         (encode-simple-op #x00 expr))
        (else
         (let ((_ (trace-value expr)))
-          (error 'encode-expr "encode-expr: Unrecognized expr"))))))
+          (error 'encode-expr "unrecognized expr"))))))
 
   (define (encode-code locals body)
     (let ((contents (cons
