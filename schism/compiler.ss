@@ -383,6 +383,9 @@
   (define (relop? x)
     (memq x '(eq? neq? <)))
 
+  (define (literal? x)
+    (and (pair? x) (memq (car x) '(bool char number null))))
+
   ;; ====================== ;;
   ;; Parsing                ;;
   ;; ====================== ;;
@@ -577,10 +580,12 @@
         `(if ,(convert-closures-expr (cadr expr))
              ,(convert-closures-expr (caddr expr))
              ,(convert-closures-expr (cadddr expr))))
-       ((relop? tag)
+       ((or (relop? tag) (intrinsic? tag))
         `(,tag . ,(convert-closures-expr* (cdr expr))))
        ((eq? tag 'call)
         `(call ,(cadr expr) . ,(convert-closures-expr* (cddr expr))))
+       ((or (eq? tag 'var) (literal? expr))
+        expr)
        (#t (begin (write "convert-closures-expr unrecognized: ")
                   (display expr)
                   (newline)
