@@ -568,9 +568,11 @@
   (define (convert-closures fn*)
     (let ((bodies (cons '() '())))
       (let ((result (annotate-free-vars fn* bodies)))
-        (begin
-          (display "Found bodies: ") (display (car bodies)) (newline)
-          result))))
+        (let ((generated-functions (generate-closure-functions (car bodies))))
+          (begin
+            (display "Found bodies: ") (display (car bodies)) (newline)
+            (display "Generated functions: ") (trace-value generated-functions)
+            (append generated-functions result))))))
 
   (define (annotate-free-vars fn* bodies)
     (if (null? fn*)
@@ -632,6 +634,25 @@
        ((eq? tag 'var) (if (memq (cadr expr) env) '() `(,(cadr expr))))
        (else (begin (trace-value expr)
                     (error 'find-free-vars "unrecognized expr"))))))
+
+  (define (generate-closure-functions bodies)
+    (if (null? bodies)
+        '()
+        (cons (generate-closure-function (car bodies))
+              (generate-closure-functions (cdr bodies)))))
+  (define (generate-closure-function body)
+    ;; (tag args free-vars body) -> (tag . body)
+    (let ((closure-var (gensym "closure")))
+      (let ((tag (car body))
+            ;; Add an extra argument for the closure
+            (args (cons closure-var (cadr body)))
+            (free-vars (caddr body))
+            (body (cadddr body)))
+        (if (null? free-vars) ;; for now let's not allow capturing,
+                              ;; even though it's not too hard
+            `((,tag . ,args) ,body)
+            (error 'generate-closure-function "captured variables are not yet supported")))))
+
 
   ;; ====================== ;;
   ;; Apply representation   ;;
