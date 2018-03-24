@@ -557,50 +557,81 @@
   ;; Closure conversion     ;;
   ;; ====================== ;;
 
+  ;; Closure conversion will go through a couple of passes.
+  ;;
+  ;; 1. annotate-free-vars - find all the lambdas and turn them into
+  ;; expressions with their free variables listed at the top
+  ;; level. Also lifts closure bodies.
+  ;;
+  ;; That's basically it for now. Later passes will lower these forms further.
+
   (define (convert-closures fn*)
+    (let ((bodies (cons '() '())))
+      (let ((result (annotate-free-vars fn* bodies)))
+        (begin
+          (display "Found bodies: ") (display (car bodies)) (newline)
+          result))))
+
+  (define (annotate-free-vars fn* bodies)
     (if (null? fn*)
         '()
-        (cons (convert-closures-fn (car fn*)) (convert-closures (cdr fn*)))))
-  (define (convert-closures-fn fn)
+        (cons (annotate-free-vars-fn (car fn*) bodies) (annotate-free-vars (cdr fn*) bodies))))
+  (define (annotate-free-vars-fn fn bodies)
     (if (eq? (car fn) '%wasm-import)
         fn
         (let ((def (car fn))
               (body (cadr fn)))
-          `(,def ,(convert-closures-expr body)))))
-  (define (convert-closures-expr expr)
+          `(,def ,(annotate-free-vars-expr body bodies)))))
+  (define (annotate-free-vars-expr expr bodies)
     (let ((tag (car expr)))
       (cond
        ((eq? tag 'let)
-        (let ((bindings (convert-closures-bindings (cadr expr)))
-              (body (convert-closures-expr (caddr expr))))
+        (let ((bindings (annotate-free-vars-bindings (cadr expr) bodies))
+              (body (annotate-free-vars-expr (caddr expr) bodies)))
           `(let ,bindings ,body)))
        ((eq? tag 'begin)
-        (cons 'begin (convert-closures-expr* (cdr expr))))
+        (cons 'begin (annotate-free-vars-expr* (cdr expr) bodies)))
        ((eq? tag 'if)
-        `(if ,(convert-closures-expr (cadr expr))
-             ,(convert-closures-expr (caddr expr))
-             ,(convert-closures-expr (cadddr expr))))
+        `(if ,(annotate-free-vars-expr (cadr expr) bodies)
+             ,(annotate-free-vars-expr (caddr expr) bodies)
+             ,(annotate-free-vars-expr (cadddr expr) bodies)))
        ((or (relop? tag) (intrinsic? tag))
-        `(,tag . ,(convert-closures-expr* (cdr expr))))
+        `(,tag . ,(annotate-free-vars-expr* (cdr expr) bodies)))
        ((eq? tag 'call)
-        `(call ,(cadr expr) . ,(convert-closures-expr* (cddr expr))))
+        `(call ,(cadr expr) . ,(annotate-free-vars-expr* (cddr expr) bodies)))
        ((or (eq? tag 'var) (literal? expr))
         expr)
+       ((eq? tag 'lambda)
+        ;; (lambda args body) -> (make-closure args (free-vars x*) body-tag)
+        (let* ((body-tag (gensym "closure-body"))
+               (args (cadr expr))
+               (free-vars (find-free-vars (caddr expr) args))
+               (body (annotate-free-vars-expr (caddr expr) bodies)))
+          (begin (set-car! bodies (cons `(,body-tag ,args ,free-vars ,body) (car bodies)))
+                 `(make-closure ,(cadr expr) (free-vars . free-vars)
+                                ,body-tag))))
        (else (begin (display expr) (newline)
-                    (error 'convert-closures-expr "unrecognized expr"))))))
-  (define (convert-closures-bindings bindings)
+                    (error 'annotate-free-vars-expr "unrecognized expr"))))))
+  (define (annotate-free-vars-bindings bindings bodies)
     (if (null? bindings)
         '()
         ;; bindings: ((x e) . rest)
         (let ((x (caar bindings))
-              (e (convert-closures-expr (cadar bindings)))
-              (rest (convert-closures-bindings (cdr bindings))))
+              (e (annotate-free-vars-expr (cadar bindings) bodies))
+              (rest (annotate-free-vars-bindings (cdr bindings) bodies)))
           (cons `(,x ,e) rest))))
-  (define (convert-closures-expr* expr*)
+  (define (annotate-free-vars-expr* expr* bodies)
     (if (null? expr*)
         '()
-        (cons (convert-closures-expr (car expr*))
-              (convert-closures-expr* (cdr expr*)))))
+        (cons (annotate-free-vars-expr (car expr*) bodies)
+              (annotate-free-vars-expr* (cdr expr*) bodies))))
+
+  (define (find-free-vars expr env)
+    (let ((tag (car expr)))
+      (cond
+       ((eq? tag 'var) (if (memq (cadr expr) env) '() `(,(cadr expr))))
+       (else (begin (trace-value expr)
+                    (error 'find-free-vars "unrecognized expr"))))))
 
   ;; ====================== ;;
   ;; Apply representation   ;;
