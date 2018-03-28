@@ -1217,8 +1217,8 @@
   (define (encode-name-maps names index)
     (if (null? names)
         '()
-        (cons (cons index (encode-string (symbol->string (car names))))
-                (encode-name-maps (cdr names) (+ 1 index)))))
+        (cons (cons (number->leb-u8-list index) (encode-string (symbol->string (car names))))
+              (encode-name-maps (cdr names) (+ 1 index)))))
 
   ;; Takes a library and returns a list of the corresponding Wasm module
   ;; bytes
