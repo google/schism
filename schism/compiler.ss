@@ -367,7 +367,9 @@
        (define (string? p)
          (eq? (%get-tag p) ,(string-tag)))
        (define (symbol? p)
-         (eq? (%get-tag p) ,(symbol-tag))))))
+         (eq? (%get-tag p) ,(symbol-tag)))
+       (define (procedure? p)
+         (eq? (%get-tag p) ,(closure-tag))))))
 
   ;; TODO: move this into the library
   (define (memq x ls)
@@ -635,8 +637,20 @@
     (let ((tag (car expr)))
       (cond
        ((eq? tag 'var) (if (memq (cadr expr) env) '() `(,(cadr expr))))
+       ((intrinsic? tag) (find-free-vars-expr* (cdr expr) env))
        (else (begin (trace-value expr)
                     (error 'find-free-vars "unrecognized expr"))))))
+  (define (find-free-vars-expr* expr* env)
+    (if (null? expr*)
+        '()
+        (union (find-free-vars (car expr*) env)
+               (find-free-vars-expr* (cdr expr*) env))))
+
+  (define (union a b)
+    (cond
+     ((null? a) b)
+     ((memq (car a) b) (union (cdr a) b))
+     (else (cons (car a) (union (cdr a) b)))))
 
   (define (generate-closure-functions bodies)
     (if (null? bodies)
@@ -908,6 +922,7 @@
        ((wasm-simple-op? tag)
         (count-locals-exprs (cdr body)))
        ((eq? tag 'i32.const) 0)
+       ((eq? tag '%function-index) 0)
        ((or (eq? tag 'i32.store) (eq? tag 'i32.load))
         (count-locals-exprs (cddr body)))
        ((eq? tag 'if)
