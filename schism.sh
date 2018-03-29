@@ -14,4 +14,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-node --experimental-modules run-schism.mjs
+node --experimental-modules run-schism.mjs "$@"
