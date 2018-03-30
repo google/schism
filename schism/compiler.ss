@@ -548,8 +548,7 @@
         (let ((rest (make-parse-environment (cdr functions)))
               (name (cond
                      ((eq? (caar functions) 'define)
-                      ;; TODO: replace this with caadar once the next snapshot lands
-                      (caadr (car functions)))
+                      (caadar functions))
                      ((eq? (caar functions) '%wasm-import)
                       (car (caddar functions)))
                      (else (error 'make-parse-environment "unmatched top level declaration")))))
