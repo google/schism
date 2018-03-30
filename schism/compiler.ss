@@ -165,7 +165,9 @@
              (if (eq? x (caar ls))
                  (car ls)
                  (assq x (cdr ls)))
-             (error 'assq "assq: not a pair")))
+	     (if (null? ls)
+		 #f
+		 (begin (display x) (newline) (error 'assq "not a list")))))
        (define (length ls)
          (cond
           ((null? ls) 0)
@@ -386,6 +388,9 @@
   ;; ====================== ;;
   ;; Parsing                ;;
   ;; ====================== ;;
+  (define (lookup x env)
+    (cdr (assq x env)))
+
   (define (expand-macros expr)
     (if (pair? expr)
         (let ((tag (car expr)))
@@ -470,7 +475,14 @@
           (cons op (parse-exprs (cdr expr) env)))
          (else
           ;; this is a function call
-          (cons 'call (cons (car expr) (parse-exprs (cdr expr) env)))))))
+	  (let ((target (car expr)))
+	    (if (symbol? target)
+		(let ((type (lookup target env)))
+		  (if (eq? type 'top-level)
+		      (cons 'call (cons (car expr) (parse-exprs (cdr expr) env)))
+		      (error 'parse-expr
+			     "only top-level function calls are currently supported")))
+		(error 'parse-expr "only direct, top-level calls are currently supported")))))))
      (else
       (let ((_ (display expr)))
         (let ((_ (newline)))
@@ -506,9 +518,9 @@
     (let ((type (car function)))
       (cond
        ((eq? 'define type)
-        (let ((name (caadr function))
-              (args (cdadr function))
-              (body (parse-body (cddr function) env)))
+        (let* ((name (caadr function))
+	       (args (cdadr function))
+	       (body (parse-body (cddr function) (extend-parse-env args env))))
           `(,(cons name args) ,body)))
        ((eq? '%wasm-import type)
         function)
@@ -539,9 +551,9 @@
                       ;; TODO: replace this with caadar once the next snapshot lands
                       (caadr (car functions)))
                      ((eq? (caar functions) '%wasm-import)
-                      (caddar functions))
+                      (car (caddar functions)))
                      (else (error 'make-parse-environment "unmatched top level declaration")))))
-          `((,name . top-level) . ,rest))))
+          (cons (cons name 'top-level) rest))))
   (define (let-binding-names bindings)
     (if (null? bindings)
         '()
