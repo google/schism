@@ -560,12 +560,20 @@
         (let ((rest (make-parse-environment (cdr functions)))
               (name (cond
                      ((eq? (caar functions) 'define)
+<<<<<<< HEAD
                       ;; TODO: replace this with caadar once the next snapshot lands
                       (caadr (car functions)))
                      ((eq? (caar functions) '%wasm-import)
                       (car (caddar functions)))
                      (else (error 'make-parse-environment "unmatched top level declaration")))))
           `((,name . top-level) . ,rest))))
+=======
+                      (caadar functions))
+                     ((eq? (caar functions) '%wasm-import)
+                      (car (caddar functions)))
+                     (else (error 'make-parse-environment "unmatched top level declaration")))))
+          (cons (cons name 'top-level) rest))))
+>>>>>>> 5d140f837b960fcf7f66aeccc75c1b631bdc1aa1
   (define (let-binding-names bindings)
     (if (null? bindings)
         '()
