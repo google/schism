@@ -486,15 +486,19 @@
          ((intrinsic? op)
           (cons op (parse-exprs (cdr expr) env)))
          (else
-          ;; this is a function call
-	  (let ((target (car expr)))
-	    (if (symbol? target)
-		(let ((type (lookup target env)))
-		  (if (eq? type 'top-level)
-		      `(call ,(car expr) . ,(parse-exprs (cdr expr) env))
-		      (error 'parse-expr
-			     "only top-level function calls are currently supported")))
-		(error 'parse-expr "only direct, top-level calls are currently supported")))))))
+          ;; this is a procedure call
+          (let ((target (car expr)))
+            (if (symbol? target)
+                (let ((type (lookup target env)))
+                  (cond
+                   ((eq? type 'top-level)
+                    `(call ,(car expr) . ,(parse-exprs (cdr expr) env)))
+                   ((eq? type 'local)
+                    `(apply-procedure (var ,target) . ,(parse-exprs (cdr expr) env)))
+                   (else (begin
+                           (trace-value target)
+                           (error 'parse-expr "unbound variable in call")))))
+                (cons 'apply-procedure (parse-exprs expr env))))))))
      (else
       (let ((_ (display expr)))
         (let ((_ (newline)))
@@ -640,6 +644,8 @@
         `(,tag . ,(annotate-free-vars-expr* (cdr expr) bodies)))
        ((eq? tag 'call)
         `(call ,(cadr expr) . ,(annotate-free-vars-expr* (cddr expr) bodies)))
+       ((eq? tag 'apply-procedure)
+        `(apply-procedure . ,(annotate-free-vars-expr* (cdr expr) bodies)))
        ((or (eq? tag 'var) (literal? expr))
         expr)
        ((eq? tag 'lambda)
@@ -740,6 +746,8 @@
            ((eq? tag 'eof-object) `(ptr ,(constant-eof)))
            ((eq? tag 'call)
             (cons 'call (cons (cadr expr) (apply-representation-expr* (cddr expr)))))
+           ((eq? tag 'apply-procedure)
+            (cons 'apply-procedure (apply-representation-expr* (cdr expr))))
            ((eq? tag 'if)
             (let ((t (cadr expr))
                   (c (caddr expr))
@@ -818,6 +826,8 @@
        ((eq? tag 'ptr) (cons 'i32.const (cdr expr)))
        ((eq? tag 'var) `(get-local ,(cdr (assq (cadr expr) env))))
        ((eq? tag 'call) (cons 'call (cons (cadr expr) (compile-exprs (cddr expr) env))))
+       ((eq? tag 'apply-procedure)
+        (error 'compile-expr "apply-procedure not supported yet; waiting on type table"))
        ((eq? tag 'if)
         (let ((t (cadr expr))
               (c (caddr expr))
