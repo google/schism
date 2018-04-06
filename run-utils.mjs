@@ -44,13 +44,14 @@ async function compileBootstrap() {
 }
 
 function make_compiler(compiler_bytes) {
-    return async function(bytes) {
-	const engine = new Schism.Engine;
-        const schism = await engine.loadWasmModule(await compiler_bytes());
-	engine.setCurrentInputPort(bytes);
-	schism.exports['compile-stdin->stdout']();
-	return new Uint8Array(engine.output_data);
-    }
+  return async function(bytes) {
+    const engine = new Schism.Engine;
+    const schism = await engine.loadWasmModule(await compiler_bytes());
+    engine.setCurrentInputPort(bytes);
+    const module_package = schism.exports['compile-stdin->module-package']();
+    schism.exports['compile-module-package->stdout'](module_package);
+    return new Uint8Array(engine.output_data);
+  }
 }
 
 function make_cache(thunk) {
