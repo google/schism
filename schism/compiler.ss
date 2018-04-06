@@ -12,7 +12,8 @@
 ;; See the License for the specific language governing permissions and
 ;; limitations under the License.
 (library (schism compiler)
-  (export compile-library compile-stdin->stdout)
+  (export compile-library compile-stdin->stdout
+          compile-stdin->module-package compile-module-package->stdout)
   (import (rnrs)
           (only (chezscheme) gensym))
   (define (tag-size) 3)
@@ -1151,6 +1152,8 @@
   ;; Takes a library and returns a list of the corresponding Wasm module
   ;; bytes
   (define (compile-library library)
+    (generate-module-from-package (compile-library->module-package library)))
+  (define (compile-library->module-package library)
     ;; (parsed-lib : (exports . functions)
     (let ((parsed-lib (parse-library (expand-macros library))))
       (let ((exports (car parsed-lib))
@@ -1162,19 +1165,33 @@
           (let ((exports (build-exports exports (cdr parsed-lib) 0))
                 (imports (gather-imports compiled-module))
                 (functions (resolve-calls compiled-module function-names)))
-            (cons (wasm-header)
-                  (cons (cons (wasm-type-section types)
-                              (cons (wasm-import-section imports)
-                                    (cons (wasm-function-section (number-list functions
-                                                                              (length imports)))
-                                          (cons (wasm-export-section exports)
-                                                (wasm-code-section functions)))))
-                        (wasm-name-section function-names))))))))
+            `(,types ,exports ,imports ,functions ,function-names))))))
+  (define (generate-module-from-package package)
+    (let ((types (car package))
+          (exports (cadr package))
+          (imports (caddr package))
+          (functions (cadddr package))
+          (function-names (cadddr (cdr package))))
+      (generate-module types exports imports functions function-names)))
+  (define (generate-module types exports imports functions function-names)
+    (cons (wasm-header)
+          (cons (cons (wasm-type-section types)
+                      (cons (wasm-import-section imports)
+                            (cons (wasm-function-section (number-list functions
+                                                                      (length imports)))
+                                  (cons (wasm-export-section exports)
+                                        (wasm-code-section functions)))))
+                (wasm-name-section function-names))))
+
   (define (write-bytes ls)
     (cond
      ((null? ls) #t)
      ((number? ls) (write-char (integer->char ls)))
      (else (let ((_ (write-bytes (car ls))))
              (write-bytes (cdr ls))))))
+  (define (compile-stdin->module-package)
+    (compile-library->module-package (read)))
+  (define (compile-module-package->stdout package)
+    (write-bytes (generate-module-from-package package)))
   (define (compile-stdin->stdout)
-    (write-bytes (compile-library (read)))))
+    (compile-module-package->stdout (compile-library->module-package (read)))))
