@@ -126,6 +126,7 @@ class Module {
 export class Engine {
   constructor() {
     this.memory = new WebAssembly.Memory({initial: 16384});
+    this.mem_i32 = new Uint32Array(this.memory.buffer);
     this.rt = rt(this);
     this.input_port_data = [];
     this.input_index = 0;
@@ -164,13 +165,11 @@ export class Engine {
   }
 
   carOf(ptr) {
-    const mem_i32 = new Uint32Array(this.memory.buffer);
-    return mem_i32[extract_value(ptr) * 2];
+    return this.mem_i32[extract_value(ptr) * 2];
   }
 
   cdrOf(ptr) {
-    const mem_i32 = new Uint32Array(this.memory.buffer);
-    return mem_i32[extract_value(ptr) * 2 + 1];
+    return this.mem_i32[extract_value(ptr) * 2 + 1];
   }
 
   schemeToString(ptr) {
@@ -196,5 +195,84 @@ export class Engine {
     } else {
       throw new Error("To string not implemented for tag " + tag);
     }
+  }
+
+  get bytesAllocated() {
+    return this.mem_i32[0];
+  }
+
+  // Does a basic garbage collection and compaction. Assumes all items in the
+  // root set are reachable from root, and returns a pointer into the new heap
+  // that is the new location of root.
+  collect(root) {
+    const start_bytes = this.bytesAllocated;
+    //console.info(`Before collection: ${start_bytes} bytes used`);
+
+    // copy the heap
+    const from_space = this.mem_i32.slice();
+    // reset the allocation pointer and symbol table
+    this.mem_i32[0] = 0;
+    this.mem_i32[1] = 0;
+    const mem_i32 = this.mem_i32;
+
+    const forwards = new Map;
+
+    function alloc(num_words) {
+        const ptr = mem_i32[0];
+        mem_i32[0] += num_words * 4;
+        return ptr + 8;
+    }
+
+    function deep_copy(ptr) {
+        if (forwards.has(ptr)) {
+            return forwards.get(ptr);
+        }
+        const tag = extract_tag(ptr);
+        switch(tag) {
+        case TAGS.fixnum: return ptr;
+        case TAGS.constant: return ptr;
+        case TAGS.pair: {
+            let car = from_space[extract_value(ptr) * 2];
+            let cdr = from_space[extract_value(ptr) * 2 + 1];
+            car = deep_copy(car);
+            cdr = deep_copy(cdr);
+            const p = alloc(2);
+            mem_i32[p / 4] = car;
+            mem_i32[p / 4 + 1] = cdr;
+            const new_ptr = replace_tag(p, TAGS.pair);
+            forwards.set(ptr, new_ptr);
+            return new_ptr;
+        }
+        case TAGS.character: return ptr;
+        case TAGS.string: {
+            return replace_tag(deep_copy(replace_tag(ptr, TAGS.pair)), TAGS.string);
+        }
+        case TAGS.symbol: {
+            // We can be sure this symbol is not in the symbol table, or else we
+            // would have seen it already.
+            let name = from_space[extract_value(ptr) * 2];
+            name = deep_copy(name);
+            const p = alloc(2);
+            mem_i32[p / 4] = name;
+            // set the cdr to the symbol table
+            mem_i32[p / 4 + 1] = mem_i32[1];
+            mem_i32[1] = replace_tag(p, TAGS.pair);
+            const value = replace_tag(p, TAGS.symbol);
+            forwards.set(ptr, value);
+            return value;
+        }
+        default:
+            throw new Error(`Unrecognized object tag ${tag}`);
+        }
+    }
+
+    const result = deep_copy(root);
+
+    const end_bytes = this.bytesAllocated;
+    //console.info(`After collection:  ${end_bytes} bytes used`);
+
+    //console.info(`Reclaimed ${start_bytes - end_bytes} bytes`);
+
+    return result;
   }
 }
