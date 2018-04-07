@@ -48,7 +48,8 @@ function make_compiler(compiler_bytes) {
     const engine = new Schism.Engine;
     const schism = await engine.loadWasmModule(await compiler_bytes());
     engine.setCurrentInputPort(bytes);
-    const module_package = schism.exports['compile-stdin->module-package']();
+    let module_package = schism.exports['compile-stdin->module-package']();
+    module_package = engine.collect(module_package);
     schism.exports['compile-module-package->stdout'](module_package);
     return new Uint8Array(engine.output_data);
   }
