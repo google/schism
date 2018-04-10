@@ -832,10 +832,10 @@
        ((eq? tag 'apply-procedure)
 	(let ((args (args->types (cdr expr))))
 	  `(call-indirect (fn ,args (i32))
-			  (i32.load (offset 0)
-				    (i32.and (i32.const ,(fixnum-mask))
-					     ,(compile-expr (cadr expr) env)))
-			  . ,(compile-exprs (cdr expr) env))))
+			  . ,(append (compile-exprs (cdr expr) env)
+				     `((i32.load (offset 0)
+						 (i32.and (i32.const ,(fixnum-mask))
+							  ,(compile-expr (cadr expr) env))))))))
        ((eq? tag 'if)
         (let ((t (cadr expr))
               (c (caddr expr))
@@ -1345,6 +1345,20 @@
         (cons (cons (number->leb-u8-list index) (encode-string (symbol->string (car names))))
               (encode-name-maps (cdr names) (+ 1 index)))))
 
+  (define (wasm-table-section num-items)
+    (make-section 4 (make-vec 1
+			      `(#x70 #x00 . ,(number->leb-u8-list num-items)))))
+
+  (define (encode-numbers numbers)
+    (if (null? numbers)
+	'()
+	(cons (number->leb-u8-list (car numbers)) (encode-numbers (cdr numbers)))))
+  (define (wasm-element-section element-ids)
+    (make-section 9 (make-vec 1 `(0 ,(encode-expr `(i32.const 0))
+				    #x0b
+				    ,(make-vec (length element-ids)
+					       (encode-numbers element-ids))))))
+
   ;; Takes a library and returns a list of the corresponding Wasm module
   ;; bytes
   (define (compile-library library)
@@ -1376,8 +1390,11 @@
           (cons (cons (wasm-type-section types)
                       (cons (wasm-import-section imports)
                             (cons (wasm-function-section type-ids)
-                                  (cons (wasm-export-section exports)
-                                        (wasm-code-section functions)))))
+                                  (cons (wasm-table-section (length function-names))
+					(cons (wasm-export-section exports)
+					      (cons (wasm-element-section
+						     (number-list function-names 0))
+						    (wasm-code-section functions)))))))
                 (wasm-name-section function-names))))
 
   (define (write-bytes ls)
