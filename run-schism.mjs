@@ -24,7 +24,7 @@ import process from 'process';
 async function runSchism() {
     // set up the input port
     const input_file = process.argv[2] || "./schism/compiler.ss";
-    const compiler_output = await stage2_compile(fs.readFileSync(input_file));
+    const compiler_output = await stage1_compile(fs.readFileSync(input_file));
     fs.writeFileSync('out.wasm', compiler_output);
 }
 

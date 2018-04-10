@@ -617,7 +617,7 @@
       (let ((result (annotate-free-vars fn* bodies)))
         (let ((generated-functions (generate-closure-functions (car bodies))))
           (begin
-            (append generated-functions result))))))
+	    (append result generated-functions))))))
 
   (define (annotate-free-vars fn* bodies)
     (if (null? fn*)
@@ -660,7 +660,8 @@
                  (let ((closure-var (gensym "closure-var")))
                    `(let ((,closure-var (call %alloc (number ,(closure-tag))
                                               (number ,(max 2 (+ 1 (length free-vars)))))))
-                      (begin (%store-mem (var ,closure-var) (number 0) (%function-index ,body-tag))
+                      (begin (%store-mem (var ,closure-var) (number 0)
+					 (%function-index ,body-tag))
                              (var ,closure-var)))))))
        (else (begin (display expr) (newline)
                     (error 'annotate-free-vars-expr "unrecognized expr"))))))
