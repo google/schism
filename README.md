@@ -25,7 +25,6 @@ checked into the repository.
 As mentioned, the goal has been to prioritize features needed for self
 hosting. Here are some of the current restrictions:
 
-* No `lambda`, no closures.
 * Functions may only be created with `define`, and particularly only the
   `(define (foo args ...) body)` form.
 * No use of `syntax-case`, `syntax-rules`, or `define-syntax`.
@@ -51,10 +50,9 @@ features are implemented.
 The compiler is self-hosting! Now the goal is to make a more complete
 language. Some of the big missing features are:
 
-* Closures (i.e. `lambda`)
 * Variable length argument lists
 * Proper tail recursion
-* Garbage collection
+* Garbage collection (initial support landed)
 * Macros
 
 Many of these features are interconnected and can be designed together to make
