@@ -662,9 +662,15 @@
                                               (number ,(max 2 (+ 1 (length free-vars)))))))
                       (begin (%store-mem (var ,closure-var) (number 0)
 					 (%function-index ,body-tag))
-                             (var ,closure-var)))))))
+                             . ,(generate-save-free-vars closure-var free-vars 1)))))))
        (else (begin (display expr) (newline)
                     (error 'annotate-free-vars-expr "unrecognized expr"))))))
+  (define (generate-save-free-vars closure free-vars index)
+    (if (null? free-vars)
+	`((var ,closure))
+	(cons `(%store-mem (var ,closure) (number ,(* index (word-size)))
+			   (var ,(car free-vars)))
+	      (generate-save-free-vars closure (cdr free-vars) (+ 1 index)))))
   (define (annotate-free-vars-bindings bindings bodies)
     (if (null? bindings)
         '()
@@ -711,10 +717,13 @@
             (args (cons closure-var (cadr body)))
             (free-vars (caddr body))
             (body (cadddr body)))
-        (if (null? free-vars) ;; for now let's not allow capturing,
-                              ;; even though it's not too hard
-            `((,tag . ,args) ,body)
-            (error 'generate-closure-function "captured variables are not yet supported")))))
+	`((,tag . ,args) (let ,(bind-free-vars closure-var free-vars 1)
+			   ,body)))))
+  (define (bind-free-vars closure free-vars index)
+    (if (null? free-vars)
+	'()
+	(cons `(,(car free-vars) (call read-ptr (var ,closure) (number ,(* index (word-size)))))
+	      (bind-free-vars closure (cdr free-vars) (+ 1 index)))))
 
 
   ;; ====================== ;;
