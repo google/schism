@@ -374,7 +374,19 @@
        (define (symbol? p)
          (eq? (%get-tag p) ,(symbol-tag)))
        (define (procedure? p)
-         (eq? (%get-tag p) ,(closure-tag))))))
+         (eq? (%get-tag p) ,(closure-tag)))
+       (define (map p ls)
+	 (if (null? ls)
+	     '()
+	     (cons (p (car ls)) (map p (cdr ls)))))
+       (define (fold-left p init ls)
+	 (if (null? ls)
+	     init
+	     (fold-left p (p init (car ls)) (cdr ls))))
+       (define (fold-right p init ls)
+	 (if (null? ls)
+	     init
+	     (p (car ls) (fold-right p init (cdr ls))))))))
 
   ;; TODO: move this into the library
   (define (memq x ls)
@@ -689,6 +701,7 @@
     (let ((tag (car expr)))
       (cond
        ((eq? tag 'var) (cdr expr))
+       ((eq? tag 'number) '())
        ((intrinsic? tag) (find-free-vars-expr* (cdr expr)))
        ((eq? tag 'lambda)
 	(set-diff (find-free-vars (caddr expr))
