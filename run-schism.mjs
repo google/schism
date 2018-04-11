@@ -15,7 +15,7 @@
 // limitations under the License.
 
 import * as Schism from './rt/rt';
-import { stage0_compile } from './run-utils.mjs';
+import { stage0_compile, stage1_compile, stage2_compile } from './run-utils.mjs';
 
 import fs from 'fs';
 import util from 'util';
@@ -24,7 +24,7 @@ import process from 'process';
 async function runSchism() {
     // set up the input port
     const input_file = process.argv[2] || "./schism/compiler.ss";
-    const compiler_output = await stage0_compile(fs.readFileSync(input_file));
+    const compiler_output = await stage1_compile(fs.readFileSync(input_file));
     fs.writeFileSync('out.wasm', compiler_output);
 }
 

@@ -5,10 +5,14 @@ WebAssembly.
 
 This is not an officially supported Google product.
 
-Development so far has focused on features necessary for self-hosting. The
-compiler itself is written in, and compiles, a very small subset of Scheme. Now
-that self-hosting has been achieved, development can shift towards supporting a
-more complete subset of Scheme.
+Development so far has focused on features necessary for
+self-hosting. The compiler itself is written in, and compiles, a very
+small subset of Scheme. Now that self-hosting has been achieved,
+development can shift towards supporting a more complete subset of
+Scheme. Just to be clear, by subset we mean that all programs
+supported by Schism are also legal R6RS Scheme programs and they will
+have the same behavior when run under Schism or an R6RS-compliant
+Scheme.
 
 Besides just being fun, one of the goals of this project is to explore different
 ways to use WebAssembly. This includes implementing garbage collection, possibly
@@ -21,7 +25,6 @@ checked into the repository.
 As mentioned, the goal has been to prioritize features needed for self
 hosting. Here are some of the current restrictions:
 
-* No `lambda`, no closures.
 * Functions may only be created with `define`, and particularly only the
   `(define (foo args ...) body)` form.
 * No use of `syntax-case`, `syntax-rules`, or `define-syntax`.
@@ -39,15 +42,17 @@ hosting. Here are some of the current restrictions:
 As more features are supported by the compiler, we will remove these
 restrictions.
 
+See the `docs` directory for more information about how various
+features are implemented.
+
 ## Current Status and Next Steps
 
 The compiler is self-hosting! Now the goal is to make a more complete
 language. Some of the big missing features are:
 
-* Closures (i.e. `lambda`)
 * Variable length argument lists
 * Proper tail recursion
-* Garbage collection
+* Garbage collection (initial support landed)
 * Macros
 
 Many of these features are interconnected and can be designed together to make
