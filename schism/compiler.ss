@@ -701,11 +701,13 @@
     (let ((tag (car expr)))
       (cond
        ((eq? tag 'var) (cdr expr))
-       ((eq? tag 'number) '())
-       ((intrinsic? tag) (find-free-vars-expr* (cdr expr)))
+       ((literal? expr) '())
+       ((or (intrinsic? tag) (relop? tag)) (find-free-vars-expr* (cdr expr)))
        ((eq? tag 'lambda)
 	(set-diff (find-free-vars (caddr expr))
 		  (cadr expr)))
+       ((eq? tag 'if)
+	(find-free-vars-expr* (cdr expr)))
        (else (begin (trace-value expr)
                     (error 'find-free-vars "unrecognized expr"))))))
   (define (find-free-vars-expr* expr*)
@@ -749,7 +751,24 @@
 	(cons `(,(car free-vars) (call read-ptr (var ,closure) (number ,(* index (word-size)))))
 	      (bind-free-vars closure (cdr free-vars) (+ 1 index)))))
 
+  ;; ====================== ;;
+  ;; Tail calls             ;;
+  ;; ====================== ;;
 
+  ;; This pass finds all the call or call-indirect expressions in tail
+  ;; position and replaces them with tail-call and tail-call-indirect.
+
+  (define (replace-tail-calls fns) fns)
+  ;;(define (replace-tail-calls fns)
+  ;;  (let ((wasm-import '%wasm-import))
+  ;;    (map (lambda (f)
+  ;;	     (if (eq? (caar f) wasm-import)
+  ;;		 f
+  ;;		 (cons (car f)
+  ;;		       (replace-tail-calls-tail (cadr f))))))))
+  ;;(define (replace-tail-calls-tail tail)
+  ;;  tail)
+  
   ;; ====================== ;;
   ;; Apply representation   ;;
   ;; ====================== ;;
@@ -1407,6 +1426,7 @@
     (let ((parsed-lib (parse-library (expand-macros library))))
       (let ((exports (car parsed-lib)))
         (let* ((closure-converted (convert-closures (cdr parsed-lib)))
+	       (closure-converted (replace-tail-calls closure-converted))
                (function-names (functions->names closure-converted))
                (types (functions->types closure-converted))
 	       (type-ids (functions->type-ids closure-converted types))
