@@ -417,11 +417,20 @@
 	  (begin (trace-value x)
 		 (error 'lookup "unbound identifier")))))
 
+  (define (expand-macros-quasiquote expr)
+    (cond
+     ((pair? expr)
+      (if (eq? (car expr) 'unquote)
+	  (cons (car expr) (expand-macros* (cdr expr)))
+	  (map (lambda (e) (expand-macros-quasiquote e)) expr)))
+     (else expr)))
+    
   (define (expand-macros expr)
     (if (pair? expr)
         (let ((tag (car expr)))
           (cond
-           ((or (eq? tag 'quote) (eq? tag 'quasiquote)) expr)
+           ((eq? tag 'quote) expr)
+	   ((eq? tag 'quasiquote) (map (lambda (e) (expand-macros-quasiquote e)) expr))
            ((eq? tag 'or)
             (if (null? (cdr expr))
                 #f
@@ -895,6 +904,9 @@
        ((eq? tag 'number) (cons 'i32.const (cdr expr)))
        ((eq? tag 'ptr) (cons 'i32.const (cdr expr)))
        ((eq? tag 'var) `(get-local ,(cdr (assq (cadr expr) env))))
+;;       ((eq? tag 'var) `(get-local ,(cdr (or (assq (cadr expr) env)
+;;					     (begin (trace-value (cadr expr))
+;;						    (error 'compile-expr "unbound local"))))))
        ((eq? tag 'call) (cons 'call (cons (cadr expr) (compile-exprs (cddr expr) env))))
        ((eq? tag 'apply-procedure)
 	(let ((args (args->types (cdr expr))))
