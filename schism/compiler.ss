@@ -411,7 +411,11 @@
   ;; Parsing                ;;
   ;; ====================== ;;
   (define (lookup x env)
-    (cdr (assq x env)))
+    (let ((v (assq x env)))
+      (if v
+	  (cdr v)
+	  (begin (trace-value x)
+		 (error 'lookup "unbound identifier")))))
 
   (define (expand-macros expr)
     (if (pair? expr)
