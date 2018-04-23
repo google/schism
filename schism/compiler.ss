@@ -417,11 +417,20 @@
 	  (begin (trace-value x)
 		 (error 'lookup "unbound identifier")))))
 
+  (define (expand-macros-quasiquote expr)
+    (cond
+     ((pair? expr)
+      (if (eq? (car expr) 'unquote)
+	  (cons (car expr) (expand-macros* (cdr expr)))
+	  (map (lambda (e) (expand-macros-quasiquote e)) expr)))
+     (else expr)))
+    
   (define (expand-macros expr)
     (if (pair? expr)
         (let ((tag (car expr)))
           (cond
-           ((or (eq? tag 'quote) (eq? tag 'quasiquote)) expr)
+           ((eq? tag 'quote) expr)
+	   ((eq? tag 'quasiquote) (map (lambda (e) (expand-macros-quasiquote e)) expr))
            ((eq? tag 'or)
             (if (null? (cdr expr))
                 #f
@@ -766,23 +775,6 @@
 	(cons `(,(car free-vars) (call read-ptr (var ,closure) (number ,(* index (word-size)))))
 	      (bind-free-vars closure (cdr free-vars) (+ 1 index)))))
 
-  ;; ====================== ;;
-  ;; Tail calls             ;;
-  ;; ====================== ;;
-
-  ;; This pass finds all the call or call-indirect expressions in tail
-  ;; position and replaces them with tail-call and tail-call-indirect.
-
-  (define (replace-tail-calls fns) fns)
-  ;;(define (replace-tail-calls fns)
-  ;;  (let ((wasm-import '%wasm-import))
-  ;;    (map (lambda (f)
-  ;;	     (if (eq? (caar f) wasm-import)
-  ;;		 f
-  ;;		 (cons (car f)
-  ;;		       (replace-tail-calls-tail (cadr f))))))))
-  ;;(define (replace-tail-calls-tail tail)
-  ;;  tail)
   
   ;; ====================== ;;
   ;; Apply representation   ;;
@@ -894,7 +886,9 @@
        ((eq? tag 'begin) (cons 'begin (compile-begin (cdr expr) env)))
        ((eq? tag 'number) (cons 'i32.const (cdr expr)))
        ((eq? tag 'ptr) (cons 'i32.const (cdr expr)))
-       ((eq? tag 'var) `(get-local ,(cdr (assq (cadr expr) env))))
+       ((eq? tag 'var) `(get-local ,(cdr (or (assq (cadr expr) env)
+					     (begin (trace-value (cadr expr))
+						    (error 'compile-expr "unbound local"))))))
        ((eq? tag 'call) (cons 'call (cons (cadr expr) (compile-exprs (cddr expr) env))))
        ((eq? tag 'apply-procedure)
 	(let ((args (args->types (cdr expr))))
@@ -1441,24 +1435,23 @@
     (let ((parsed-lib (parse-library (expand-macros library))))
       (let ((exports (car parsed-lib)))
         (let* ((closure-converted (convert-closures (cdr parsed-lib)))
-	       (closure-converted (replace-tail-calls closure-converted))
                (function-names (functions->names closure-converted))
                (types (functions->types closure-converted))
 	       (type-ids (functions->type-ids closure-converted types))
                (compiled-module (compile-functions
                                  (apply-representation closure-converted))))
           (let ((exports (build-exports exports closure-converted 0))
-                (imports (gather-imports compiled-module types))
-                (functions (resolve-calls compiled-module function-names types)))
-            `(,types ,exports ,imports ,functions ,function-names ,type-ids))))))
+                (imports (gather-imports compiled-module types)))
+            `(,types ,exports ,imports ,compiled-module ,function-names ,type-ids))))))
   (define (generate-module-from-package package)
     (let ((types (car package))
           (exports (cadr package))
           (imports (caddr package))
-          (functions (cadddr package))
+          (compiled-module (cadddr package))
           (function-names (cadddr (cdr package)))
 	  (type-ids (cadddr (cddr package))))
-      (generate-module types exports imports functions function-names type-ids)))
+      (let ((functions (resolve-calls compiled-module function-names types)))
+	(generate-module types exports imports functions function-names type-ids))))
   (define (generate-module types exports imports functions function-names type-ids)
     (cons (wasm-header)
           (cons (cons (wasm-type-section types)
