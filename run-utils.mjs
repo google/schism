@@ -19,9 +19,9 @@ import * as Schism from './rt/rt';
 import child_process from 'child_process';
 import fs from 'fs';
 import util from 'util';
-import { URL } from 'url';
+import root from './root';
 
-const compilerPath = new URL('./schism/compiler.ss', import.meta.url).pathname;
+const compilerPath = root.join('schism/compiler.ss');
 
 export const OPTIONS = {
     use_snapshot: true, // load schism-stage0.wasm if true instead of
@@ -73,7 +73,7 @@ function make_cache(thunk) {
 export const stage0_bytes = make_cache(() =>
   OPTIONS.stage0 ? (async function() {
     return OPTIONS.use_snapshot
-	? fs.readFileSync(new URL('./schism-stage0.wasm', import.meta.url).pathname)
+	? fs.readFileSync(root.join('schism-stage0.wasm'))
 	: await compileBootstrap()
   })() : undefined);
 // Compile bytes using the stage0 compiler.
@@ -81,8 +81,7 @@ export const stage0_compile = OPTIONS.stage0 ? make_compiler(stage0_bytes) : und
 export const stage1_bytes = make_cache(async () => {
   if (!OPTIONS.stage1) { return undefined; }
   const bytes = await stage0_compile(fs.readFileSync(compilerPath));
-  fs.writeFileSync(new URL('./schism-stage1.wasm', import.meta.url).pathname,
-    bytes);
+  fs.writeFileSync(root.join('schism-stage1.wasm'), bytes);
   return bytes;
 });
 
@@ -90,8 +89,7 @@ export const stage1_compile = OPTIONS.stage1 ? make_compiler(stage1_bytes) : und
 export const stage2_bytes = make_cache(async () => {
   if (!OPTIONS.stage2) { return undefined; }
   const bytes = await stage1_compile(fs.readFileSync(compilerPath));
-  fs.writeFileSync(new URL('./schism-stage2.wasm', import.meta.url).pathname,
-    bytes);
+  fs.writeFileSync(root.join('schism-stage2.wasm'), bytes);
   return bytes;
 });
 
@@ -99,6 +97,6 @@ export const stage2_compile = OPTIONS.stage2 ? make_compiler(stage2_bytes) : und
 export const stage3_bytes = make_cache(async () => {
   if (!OPTIONS.stage3) { return undefined; }
   const bytes = await stage2_compile(fs.readFileSync(compilerPath));
-  fs.writeFileSync(new URL('./schism-stage3.wasm', import.meta.url).pathname, bytes);
+  fs.writeFileSync(root.join('schism-stage3.wasm'), bytes);
   return bytes;
 });
