@@ -20,5 +20,11 @@
   "bugs": {
     "url": "https://github.com/google/schism/issues"
   },
-  "homepage": "https://github.com/google/schism#readme"
+  "homepage": "https://github.com/google/schism#readme",
+  "bin": {
+    "schism": "./schism.sh"
+  },
+  "dependencies": {
+    "meow": "^5.0.0"
+  }
 }
