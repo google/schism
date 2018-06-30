@@ -26,6 +26,12 @@ import fs from 'fs';
 import process from 'process';
 import util from 'util';
 
+import * as eqFalseTest from './test/eq-false-arg.mjs';
+
+const testModules = {
+    'test/eq-false-arg.ss': eqFalseTest
+};
+
 Error.stackTraceLimit = 20;
 
 async function runTest(name, compile = compileWithHostScheme) {
@@ -42,11 +48,7 @@ async function runTest(name, compile = compileWithHostScheme) {
     }
 
     // Set up mjs tests
-    const mjsFile = name.replace(".ss", ".mjs");
-    let testModule;
-    if (fs.existsSync(mjsFile)) {
-        testModule = await import(`./${mjsFile}`);
-    }
+    const testModule = testModules[name];
 
     let raw_result;
     let result;
