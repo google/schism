@@ -26,9 +26,11 @@ import fs from 'fs';
 import process from 'process';
 import util from 'util';
 
+import * as addNumsTest from './test/add-nums-arg.mjs';
 import * as eqFalseTest from './test/eq-false-arg.mjs';
 
 const testModules = {
+    'test/add-nums-arg.ss': addNumsTest,
     'test/eq-false-arg.ss': eqFalseTest
 };
 
@@ -58,12 +60,12 @@ async function runTest(name, compile = compileWithHostScheme) {
         } else {
             raw_result = wasm.exports['do-test']();
             result = engine.jsFromScheme(raw_result);
+            assert.ok(result != false, "test failed");
         }
     } catch (e) {
         console.error(e.stack);
         throw e;
     }
-    assert.ok(result != false, "test failed");
 }
 
 async function getTests() {
