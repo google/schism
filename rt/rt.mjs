@@ -66,6 +66,19 @@ function js_from_scheme(ptr) {
     }
 }
 
+// Convert a JS value into a Scheme ptr
+function scheme_from_js(value) {
+    const type = typeof value;
+    switch(type) {
+        case 'number':
+            return value << TAG_SIZE;
+        case 'boolean':
+            return CONSTANTS[value];
+        default:
+            throw new Error(`Converting a ${type} has not been implemented`);
+    }
+}
+
 function fixnum_from_number(n) {
     return n << TAG_SIZE;
 }
@@ -162,6 +175,10 @@ export class Engine {
 
     jsFromScheme(ptr) {
         return js_from_scheme(ptr);
+    }
+
+    schemeFromJs(value) {
+        return scheme_from_js(value);
     }
 
     carOf(ptr) {
