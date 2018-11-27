@@ -46,16 +46,19 @@ async function compileBootstrap() {
     return compileWithHostScheme('./schism/compiler.ss');
 }
 
-function make_compiler(compiler_bytes) {
-  return async function(bytes) {
-    const engine = new Schism.Engine;
-    const schism = await engine.loadWasmModule(await compiler_bytes());
-    engine.setCurrentInputPort(bytes);
-    let module_package = schism.exports['compile-stdin->module-package']();
-    module_package = engine.collect(module_package);
-    schism.exports['compile-module-package->stdout'](module_package);
-    return new Uint8Array(engine.output_data);
-  }
+function make_compiler(compiler_bytes, name) {
+    return async function(bytes, programName = "[unknown]") {
+        //console.info(`Compiling ${programName} with ${name}`);
+        const engine = new Schism.Engine;
+        const schism = await engine.loadWasmModule(await compiler_bytes());
+        engine.setCurrentInputPort(bytes);
+        // let module_package = schism.exports['compile-stdin->module-package']();
+        // module_package = engine.collect(module_package);
+        // schism.exports['compile-module-package->stdout'](module_package);
+        schism.exports['compile-stdin->stdout']();
+        //console.info(`Done compiling ${programName} with ${name}`);
+        return new Uint8Array(engine.output_data);
+    }
 }
 
 function make_cache(thunk) {
@@ -77,26 +80,26 @@ export const stage0_bytes = make_cache(() =>
 	: await compileBootstrap()
   })() : undefined);
 // Compile bytes using the stage0 compiler.
-export const stage0_compile = OPTIONS.stage0 ? make_compiler(stage0_bytes) : undefined;
+export const stage0_compile = OPTIONS.stage0 ? make_compiler(stage0_bytes, "Stage0 compiler") : undefined;
 export const stage1_bytes = make_cache(async () => {
-  if (!OPTIONS.stage1) { return undefined; }
-  const bytes = await stage0_compile(fs.readFileSync(compilerPath));
-  fs.writeFileSync(root.join('schism-stage1.wasm'), bytes);
-  return bytes;
+    if (!OPTIONS.stage1) { return undefined; }
+    const bytes = await stage0_compile(fs.readFileSync(compilerPath), "compiler.ss");
+    fs.writeFileSync(root.join('schism-stage1.wasm'), bytes);
+    return bytes;
 });
 
-export const stage1_compile = OPTIONS.stage1 ? make_compiler(stage1_bytes) : undefined;
+export const stage1_compile = OPTIONS.stage1 ? make_compiler(stage1_bytes, "Stage1 compiler") : undefined;
 export const stage2_bytes = make_cache(async () => {
-  if (!OPTIONS.stage2) { return undefined; }
-  const bytes = await stage1_compile(fs.readFileSync(compilerPath));
-  fs.writeFileSync(root.join('schism-stage2.wasm'), bytes);
-  return bytes;
+    if (!OPTIONS.stage2) { return undefined; }
+    const bytes = await stage1_compile(fs.readFileSync(compilerPath), "compiler.ss");
+    fs.writeFileSync(root.join('schism-stage2.wasm'), bytes);
+    return bytes;
 });
 
-export const stage2_compile = OPTIONS.stage2 ? make_compiler(stage2_bytes) : undefined;
+export const stage2_compile = OPTIONS.stage2 ? make_compiler(stage2_bytes, "Stage2 compiler") : undefined;
 export const stage3_bytes = make_cache(async () => {
-  if (!OPTIONS.stage3) { return undefined; }
-  const bytes = await stage2_compile(fs.readFileSync(compilerPath));
-  fs.writeFileSync(root.join('schism-stage3.wasm'), bytes);
-  return bytes;
+    if (!OPTIONS.stage3) { return undefined; }
+    const bytes = await stage2_compile(fs.readFileSync(compilerPath), "compiler.ss");
+    fs.writeFileSync(root.join('schism-stage3.wasm'), bytes);
+    return bytes;
 });

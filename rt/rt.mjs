@@ -57,12 +57,14 @@ const CONSTANTS = {
 // Convert a Scheme ptr into a corresponding JavaScript value
 function js_from_scheme(ptr) {
     switch (extract_tag(ptr)) {
-        case TAGS.fixnum:
-            return ptr >> TAG_SIZE; // sign extending shift so negatives work.
-        case TAGS.constant:
-            return SCHEME_CONSTANTS[extract_value(ptr)];
-        case TAGS.character:
-            return String.fromCharCode(extract_value(ptr));
+    case TAGS.fixnum:
+        return ptr >> TAG_SIZE; // sign extending shift so negatives work.
+    case TAGS.constant:
+        return SCHEME_CONSTANTS[extract_value(ptr)];
+    case TAGS.character:
+        return String.fromCharCode(extract_value(ptr));
+    default:
+        throw new Error(`Unrecognized object tag: ${extract_tag(ptr)}, ptr=${ptr.toString(16)}`);
     }
 }
 
@@ -70,12 +72,12 @@ function js_from_scheme(ptr) {
 function scheme_from_js(value) {
     const type = typeof value;
     switch(type) {
-        case 'number':
-            return value << TAG_SIZE;
-        case 'boolean':
-            return CONSTANTS[value];
-        default:
-            throw new Error(`Converting a ${type} has not been implemented`);
+    case 'number':
+        return value << TAG_SIZE;
+    case 'boolean':
+        return CONSTANTS[value];
+    default:
+        throw new Error(`Converting a ${type} has not been implemented`);
     }
 }
 
@@ -121,6 +123,9 @@ function rt(engine) {
             throw new SchemeError(engine.schemeToString(where), engine.schemeToString(what));
         },
         '%log-char': c => {
+            if (extract_tag(c) != TAGS.character) {
+                throw new SchemeError("%log-char", `${c} is not a char (tag is ${extract_tag(c)})`);
+            }
             engine.log += engine.jsFromScheme(c);
         },
         '%flush-log': () => {
@@ -174,11 +179,29 @@ export class Engine {
     }
 
     jsFromScheme(ptr) {
-        return js_from_scheme(ptr);
+        switch (extract_tag(ptr)) {
+            case TAGS.string:
+                return this.schemeToString(ptr);
+            case TAGS.symbol:
+                if (this.carOf(ptr) != CONSTANTS.null) {
+                    return this.schemeToString(this.carOf(ptr));
+                } else {
+                    return "<gensym>"
+                }
+            case TAGS.pair:
+                return [this.jsFromScheme(this.carOf(ptr)),
+                this.jsFromScheme(this.cdrOf(ptr))];
+            default:
+                return js_from_scheme(ptr);
+        }
     }
 
     schemeFromJs(value) {
         return scheme_from_js(value);
+    }
+
+    loadi32(ptr, offset_in_words) {
+        return this.mem_i32[extract_value(ptr) * 2 + offset_in_words];
     }
 
     carOf(ptr) {
@@ -188,6 +211,7 @@ export class Engine {
     cdrOf(ptr) {
         return this.mem_i32[extract_value(ptr) * 2 + 1];
     }
+
     schemeToString(ptr) {
         const tag = extract_tag(ptr);
 
@@ -200,12 +224,20 @@ export class Engine {
         } else if (tag == TAGS.string) {
             let x = ptr;
             let s = "";
-            while (x != CONSTANTS[null]) {
-                const c = this.jsFromScheme(this.carOf(x));
-                s += c;
-                x = this.cdrOf(x);
+            if (extract_tag(this.carOf(x)) == TAGS.fixnum) {
+                // this is a new style string.
+                const length = this.jsFromScheme(this.carOf(x));
+                for (let i = 0; i < length; i++) {
+                    s += this.jsFromScheme(this.loadi32(x, i + 1));
+                }
+            } else {
+                while (x != CONSTANTS[null]) {
+                    const c = this.jsFromScheme(this.carOf(x));
+                    s += c;
+                    x = this.cdrOf(x);
 
-                if (s.length > 100) return x;
+                    if (s.length > 100) return x;
+                }
             }
             return s;
         } else {
@@ -228,6 +260,8 @@ export class Engine {
 
         function alloc(num_words) {
             const ptr = mem_i32[0];
+            // round up to next even number
+            num_words = (num_words + 1) & -2;
             mem_i32[0] += num_words * 4;
             return ptr + 8;
         }
@@ -238,29 +272,40 @@ export class Engine {
             }
             const tag = extract_tag(ptr);
             switch (tag) {
-                case TAGS.fixnum: return ptr;
-                case TAGS.constant: return ptr;
-                case TAGS.pair: {
-                    let car = from_space[extract_value(ptr) * 2];
-                    let cdr = from_space[extract_value(ptr) * 2 + 1];
-                    car = deep_copy(car);
-                    cdr = deep_copy(cdr);
-                    const p = alloc(2);
-                    mem_i32[p / 4] = car;
-                    mem_i32[p / 4 + 1] = cdr;
-                    const new_ptr = replace_tag(p, TAGS.pair);
-                    forwards.set(ptr, new_ptr);
-                    return new_ptr;
-                }
-                case TAGS.character: return ptr;
-                case TAGS.string: {
+            case TAGS.fixnum: return ptr;
+            case TAGS.constant: return ptr;
+            case TAGS.pair: {
+                let car = from_space[extract_value(ptr) * 2];
+                let cdr = from_space[extract_value(ptr) * 2 + 1];
+                car = deep_copy(car);
+                cdr = deep_copy(cdr);
+                const p = alloc(2);
+                mem_i32[p / 4] = car;
+                mem_i32[p / 4 + 1] = cdr;
+                const new_ptr = replace_tag(p, TAGS.pair);
+                forwards.set(ptr, new_ptr);
+                return new_ptr;
+            }
+            case TAGS.character: return ptr;
+            case TAGS.string: {
+                if (extract_tag(from_space[extract_value(ptr) * 2]) == TAGS.fixnum) {
+                    // new style string
+                    const length = extract_value(from_space[extract_value(ptr) * 2]);
+                    const p = alloc(1 + length);
+                    mem_i32[p / 4] = tag_constant(length, TAGS.fixnum);
+                    for (let i = 0; i < length; i++) {
+                        mem_i32[p / 4 + i + 1] = from_space[extract_value(ptr) * 2 + 1 + i];
+                    }
+                    return p;
+                } else {
                     return replace_tag(deep_copy(replace_tag(ptr, TAGS.pair)), TAGS.string);
                 }
-                case TAGS.symbol: {
-                    return replace_tag(deep_copy(replace_tag(ptr, TAGS.pair)), TAGS.symbol);
-                }
-                default:
-                    throw new Error(`Unrecognized object tag ${tag}`);
+            }
+            case TAGS.symbol: {
+                return replace_tag(deep_copy(replace_tag(ptr, TAGS.pair)), TAGS.symbol);
+            }
+            default:
+                throw new Error(`Unrecognized object tag ${tag}`);
             }
         }
 
@@ -271,9 +316,9 @@ export class Engine {
         // Copy the root.
         const result = deep_copy(root);
 
-        //const end_bytes = this.bytesAllocated;
-        //const reclaimed = start_bytes - end_bytes;
-        //console.info(`Reclaimed ${reclaimed / 1024 / 1024} MiB (${reclaimed / start_bytes * 100}%)`);
+        const end_bytes = this.bytesAllocated;
+        const reclaimed = start_bytes - end_bytes;
+        console.info(`Reclaimed ${reclaimed / 1024 / 1024} MiB (${reclaimed / start_bytes * 100}%)`);
 
         return result;
     }

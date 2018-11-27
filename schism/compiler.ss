@@ -70,8 +70,10 @@
        (%wasm-import "rt" (error where what))
        (%wasm-import "rt" (%log-char c))
        (%wasm-import "rt" (%flush-log))
-       ;; display, newline, etc are all just enough to compile. We'll fill them in later.
        (define (display x)
+         ;; display, and all of the functions it calls, must not
+         ;; allocate so that we can use it to debug allocation
+         ;; routines.
          (cond
           ((pair? x)
            (begin (%log-char #\()
@@ -103,14 +105,13 @@
                        (%log-char #\))))))
        (define (%display-raw-string s)
          (if (string? s)
-             (%display-chars-as-string (string->list s))
+             (%display-chars-as-string s 0)
              (error '%display-raw-string "not a string")))
-       (define (%display-chars-as-string chars)
-         (cond
-          ((null? chars) (begin))
-          ((pair? chars) (begin (%log-char (car chars))
-                                (%display-chars-as-string (cdr chars))))
-          (else (error '%display-chars-as-string "not a list of chars"))))
+       (define (%display-chars-as-string s i)
+         (if (< i (string-length s))
+             (begin (%log-char (string-ref s i))
+                    (%display-chars-as-string s (+ 1 i)))
+             (begin)))
        (define (write x)
          (if (string? x)
              (%display-raw-string x)
@@ -133,6 +134,25 @@
              ;; Add one dword to the pointer we allocated to make sure
              ;; we skip the base air.
              (%set-tag (+ allocation 1) tag))))
+       (define (make-string n)
+         ;; Allocate n + 1 words. %alloc will automatically round up
+         ;; if needed.
+         (let* ((num-words (+ 1 n))
+                (s (%alloc ,(string-tag) num-words)))
+           (begin
+             ;; Save the length of the string.
+             (%store-mem s 0 n)
+             s)))
+       (define (string-set! s i c)
+         (if (and (string? s)
+                  (char? c)
+                  (< i (string-length s)))
+             (begin 
+               (%store-mem s (* ,(word-size) (+ i 1)) c)
+               (begin))
+             (error 'string-set! "Invalid arguments")))
+       (define (string-length s)
+         (%read-mem (%as-fixnum s) 0))
        (define (cons a d)
          (let ((p (%alloc ,(pair-tag) 2)))
            (begin
@@ -210,20 +230,30 @@
        (define (char-ci<? c1 c2)
          (< (char->integer c1) (char->integer c2)))
        (define (list->string ls)
-         (if (pair? ls)
-             ;; For now we represent strings as lists of characters. That
-             ;; means converting between the two is just a matter of
-             ;; changing the tags.
-             (%set-tag ls ,(string-tag))
-             (error 'list->string "list->string: not a pair")))
+         (list->string-inner (make-string (length ls)) ls 0))
+       (define (list->string-inner s ls i)
+         (if (null? ls)
+             s
+             (begin
+               (string-set! s i (car ls))
+               (list->string-inner s (cdr ls) (+ 1 i)))))
        (define (string->list s)
-         (if (string? s)
-             (%set-tag s ,(pair-tag))
-             ;; calling error here can lead to an infinite loop, so we
-             ;; generate an unreachable instead.
-             (%unreachable)))
+         (string->list-inner s 0))
+       (define (string->list-inner s i)
+         (if (eq? i (string-length s))
+             '()
+             (cons (string-ref s i) (string->list-inner s (+ i 1)))))
+       (define (string-ref s i)
+         ;; TODO: make sure i is in bounds
+         (%read-mem (%as-fixnum s) (* ,(word-size) (+ i 1))))
        (define (string-equal? s1 s2)
-         (list-all-eq? (string->list s1) (string->list s2)))
+         (or (eq? s1 s2)
+             (and (eq? (string-length s1) (string-length s2))
+                  (string-equal-loop s1 s2 0))))
+       (define (string-equal-loop s1 s2 i)
+         (or (>= i (string-length s1))
+             (and (eq? (string-ref s1 i) (string-ref s2 i))
+                  (string-equal-loop s1 s2 (+ i 1)))))
        (define (hash-chars chars h)
          (if (null? chars)
              h
@@ -232,11 +262,15 @@
          (if (zero? n)
              '()
              (cons '() (make-symbol-table (- n 1)))))
-       (define (%find-symbol-by-name s ls)
-         (and (pair? ls)
-              (if (string-equal? s (car ls))
-                  (%set-tag ls ,(symbol-tag))
-                  (%find-symbol-by-name s (cdr ls)))))
+       (define (%find-symbol-by-name s table)
+         (if (or (zero? table) (null? table))
+             #f
+             (if (pair? table)
+                 ;; (car table) is not a string in the case of gensyms
+                 (if (and (string? (car table)) (string-equal? s (car table)))
+                     (%set-tag table ,(symbol-tag))
+                     (%find-symbol-by-name s (cdr table)))
+                 (error '%find-symbol-by-name "corrupt symbol table"))))
        (define (gensym t) ;; Creates a brand new symbol that cannot be reused
          (let ((x (cons #f '())))
            (%set-tag x ,(symbol-tag))))
@@ -268,6 +302,8 @@
          (if (< a b) #t #f))
        (define (> a b)
          (< b a))
+       (define (>= a b)
+         (not (< a b)))
        (define (max a b)
          (if (< a b) b a))
        (define (read)
@@ -422,7 +458,7 @@
     (memq x '(eq? neq? <)))
 
   (define (literal? x)
-    (and (pair? x) (memq (car x) '(bool char number null))))
+    (and (pair? x) (memq (car x) '(bool char number null string))))
 
   ;; ====================== ;;
   ;; Parsing                ;;
@@ -501,8 +537,7 @@
      ((number? expr) `(number ,expr))
      ((boolean? expr) `(bool ,expr))
      ((char? expr) `(char ,expr))
-     ((string? expr)
-      `(call list->string ,(parse-expr (cons 'quote (cons (string->list expr) '())) env)))
+     ((string? expr) `(string ,expr))
      ((symbol? expr) `(var ,expr))
      ((pair? expr)
       (let ((op (car expr)))
@@ -794,6 +829,99 @@
 	(cons `(,(car free-vars) (%read-mem (%as-fixnum (var ,closure)) (number ,(* index (word-size)))))
 	      (bind-free-vars closure (cdr free-vars) (+ 1 index)))))
 
+  ;; ====================== ;;
+  ;; Lower strings          ;;
+  ;; ====================== ;;
+
+  ;; lower-strings removes all string literals. At the moment, it does
+  ;; this by replacing string literals with code to allocate and build
+  ;; a string, but eventually we will be able to do this ahead of time
+  ;; and store the strings in a static data section.
+
+  (define (lower-strings fn*)
+    (map (lambda (fn) (lower-strings-fn fn)) fn*))
+  (define (lower-strings-fn fn)
+    (if (eq? (car fn) '%wasm-import)
+        fn
+        (let ((def (car fn))
+              (body (cadr fn)))
+          `(,def ,(lower-strings-expr body)))))
+  (define (lower-strings-expr expr)
+    (if (and (pair? expr) (symbol? (car expr)))
+        (let ((tag (car expr)))
+          (cond
+           ((eq? tag 'null) expr)
+           ((eq? tag 'bool) expr)
+           ((eq? tag 'char) expr)
+           ((eq? tag 'begin)
+	    (cons 'begin (map (lambda (e) (lower-strings-expr e))
+			      (cdr expr))))
+           ((eq? tag 'var) expr)
+           ((eq? tag 'number) expr)
+           ((eq? tag 'eof-object) expr)
+	   ((eq? tag 'string) (lower-string (cadr expr)))
+           ((eq? tag 'call)
+            (cons 'call (cons (cadr expr)
+			      (map (lambda (e) (lower-strings-expr e)) (cddr expr)))))
+           ((eq? tag 'apply-procedure)
+            (cons 'apply-procedure (map (lambda (e) (lower-strings-expr e)) (cdr expr))))
+           ((eq? tag 'if)
+            (let ((t (cadr expr))
+                  (c (caddr expr))
+                  (a (cadddr expr)))
+              `(if
+                ,(lower-strings-expr t)
+                ,(lower-strings-expr c)
+                ,(lower-strings-expr a))))
+           ((eq? tag 'let)
+            `(let ,(lower-strings-bindings (cadr expr))
+               ,(lower-strings-expr (caddr expr))))
+           ((eq? tag '%function-index) expr)
+           ((intrinsic? tag)
+            (cons tag (map (lambda (e) (lower-strings-expr e)) (cdr expr))))
+	   ((eq? tag 'zero?) `(zero? ,(lower-strings-expr (cadr expr))))
+	   ((eq? tag 'eq?) `(eq?
+			     ,(lower-strings-expr (cadr expr))
+			     ,(lower-strings-expr (caddr expr))))
+	   ((eq? tag '<) `(<
+			   ,(lower-strings-expr (cadr expr))
+			   ,(lower-strings-expr (caddr expr))))
+	   ((eq? tag 'neq?) `(neq?
+			      ,(lower-strings-expr (cadr expr))
+			      ,(lower-strings-expr (caddr expr))))
+	   ((eq? tag 'bool) expr)
+           (else (begin (write "unrecognized expr: ")
+                        (display expr)
+                        (newline)
+                        (error 'lower-strings-expr "Unrecognized expr")))))
+        (begin (write "error in lower-strings-expr: `")
+               (display expr)
+               (write "` is malformed")
+               (newline)
+               (error 'lower-strings-expr "malformed expr"))))
+  (define (lower-strings-bindings bindings)
+    (map (lambda (b)
+	   (let ((name (car b))
+		 (expr (cadr b)))
+	     `(,name ,(lower-strings-expr expr))))
+	 bindings))
+  (define (lower-string s)
+    (let ((chars (string->list s))
+	  (string-var (gensym "string")))
+      `(let ((,string-var (call make-string (number ,(length chars)))))
+	 (begin
+           (begin . ,(for-index (lambda (i c)
+                                  `(call string-set! (var ,string-var)
+                                         (number ,i) (char ,c)))
+                                chars))
+           (var ,string-var)))))
+
+  (define (for-index p ls)
+    (for-index-helper p ls 0))
+  (define (for-index-helper p ls i)
+    (if (null? ls)
+	'()
+	(cons (p i (car ls)) (for-index-helper p (cdr ls) (+ i 1)))))
   
   ;; ====================== ;;
   ;; Apply representation   ;;
@@ -1457,12 +1585,13 @@
     (let ((parsed-lib (parse-library (expand-macros library))))
       (let ((exports (car parsed-lib)))
         (let* ((closure-converted (convert-closures (cdr parsed-lib)))
-               (function-names (functions->names closure-converted))
-               (types (functions->types closure-converted))
-	       (type-ids (functions->type-ids closure-converted types))
+               (string-lowered (lower-strings closure-converted))
+               (function-names (functions->names string-lowered))
+               (types (functions->types string-lowered))
+	       (type-ids (functions->type-ids string-lowered types))
                (compiled-module (compile-functions
-                                 (apply-representation closure-converted))))
-          (let ((exports (build-exports exports closure-converted 0))
+                                 (apply-representation string-lowered))))
+          (let ((exports (build-exports exports string-lowered 0))
                 (imports (gather-imports compiled-module types)))
             `(,types ,exports ,imports ,compiled-module ,function-names ,type-ids))))))
   (define (generate-module-from-package package)
