@@ -723,6 +723,8 @@
 	(find-free-vars-expr* (cdr expr)))
        ((eq? tag 'call)
 	(find-free-vars-expr* (cddr expr)))
+       ((eq? tag 'apply-procedure)
+        (find-free-vars-expr* (cdr expr)))
        ((eq? tag 'let)
 	(let ((rhs-vars (fold-left (lambda (fv binding)
 				     (union fv (find-free-vars (cadr binding))))
