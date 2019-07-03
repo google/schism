@@ -120,12 +120,19 @@
        (define (%base-pair) (%set-tag ,(allocation-pointer) ,(pair-tag)))
        (define (%symbol-table) (cdr (%base-pair)))
        (define (%alloc tag num-words)
-         (let ((new-pointer (+ (* ,(word-size) num-words) (car (%base-pair)))))
+         ;; heap pointers must be 8-byte aligned, since we store them
+         ;; as raw offsets into the linear memory, but we need space
+         ;; for the three tag bits. Since we always mask off the
+         ;; bottom three bits, we need to allocate in double-words. We
+         ;; add 1 before dividing to make sure we round up if needed.
+         (let* ((dwords (/ (+ 1 num-words) 2))
+                (new-alloc-pointer (+ dwords (car (%base-pair))))
+                (allocation (car (%base-pair))))
            (begin
-             (set-car! (%base-pair) new-pointer)
-             ;; We have an unstated assumption that we always allocate at least 8 bytes.
-             ;; Add two words to offset for base-pair.
-             (%set-tag (+ new-pointer ,(* 2 (word-size))) tag))))
+             (set-car! (%base-pair) new-alloc-pointer)
+             ;; Add one dword to the pointer we allocated to make sure
+             ;; we skip the base air.
+             (%set-tag (+ allocation 1) tag))))
        (define (cons a d)
          (init-pair (%alloc ,(pair-tag) 2) a d))
        (define (set-car! p a)

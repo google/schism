@@ -222,7 +222,6 @@ export class Engine {
     // that is the new location of root.
     collect(root) {
         const start_bytes = this.bytesAllocated;
-        //console.info(`Before collection: ${start_bytes} bytes used`);
 
         // copy the heap
         const from_space = this.mem_i32.slice();
@@ -284,10 +283,9 @@ export class Engine {
 
         const result = deep_copy(root);
 
-        const end_bytes = this.bytesAllocated;
-        //console.info(`After collection:  ${end_bytes} bytes used`);
-
-        //console.info(`Reclaimed ${start_bytes - end_bytes} bytes`);
+        //const end_bytes = this.bytesAllocated;
+        //const reclaimed = start_bytes - end_bytes;
+        //console.info(`Reclaimed ${reclaimed / 1024 / 1024} MiB (${reclaimed / start_bytes * 100}%)`);
 
         return result;
     }
