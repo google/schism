@@ -14,7 +14,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import * as Schism from './rt/rt';
 import { stage0_compile, stage1_compile, stage2_compile } from './run-utils.mjs';
 
 import fs from 'fs';

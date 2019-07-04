@@ -14,12 +14,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import * as Schism from './rt/rt';
+import * as Schism from './rt/rt.mjs';
 
 import child_process from 'child_process';
 import fs from 'fs';
 import util from 'util';
-import root from './root';
+import root from './root.mjs';
 
 const compilerPath = root.join('schism/compiler.ss');
 
