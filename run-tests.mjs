@@ -14,12 +14,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import * as Schism from './rt/rt';
+import * as Schism from './rt/rt.mjs';
 import { compileWithHostScheme, OPTIONS,
     stage0_bytes, stage0_compile,
     stage1_bytes, stage1_compile,
     stage2_bytes, stage2_compile,
-    stage3_bytes } from './run-utils';
+    stage3_bytes } from './run-utils.mjs';
 
 import assert from 'assert';
 import fs from 'fs';
