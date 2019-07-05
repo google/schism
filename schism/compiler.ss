@@ -134,7 +134,11 @@
              ;; we skip the base air.
              (%set-tag (+ allocation 1) tag))))
        (define (cons a d)
-         (init-pair (%alloc ,(pair-tag) 2) a d))
+         (let ((p (%alloc ,(pair-tag) 2)))
+           (begin
+             (%set-car! p a)
+             (%set-cdr! p d)
+             p)))
        (define (set-car! p a)
          (if (pair? p)
              (%set-car! p a)
@@ -143,17 +147,13 @@
          (if (pair? p)
              (%set-cdr! p d)
              (error 'set-cdr! "set-cdr!: not a pair")))
-       (define (init-pair p a d)
-         (set-car! p a)
-         (set-cdr! p d)
-         p)
        (define (car p)
          (if (pair? p)
-             (read-ptr p 0)
+             (%read-mem (%as-fixnum p) 0)
              (error 'car "car: not a pair")))
        (define (cdr p)
          (if (pair? p)
-             (read-ptr p ,(word-size))
+             (%read-mem (%as-fixnum p) ,(word-size))
              (error 'cdr "cdr: not a pair")))
        (define (caar p) (car (car p)))
        (define (cadr p) (car (cdr p)))
@@ -191,8 +191,6 @@
 	     (list-ref (cdr list) (- n 1))))
        (define (append a b)
          (if (null? a) b (cons (car a) (append (cdr a) b))))
-       (define (read-ptr p offset)
-         (%read-mem (%as-fixnum p) offset))
        (define (char->integer c) (%as-fixnum c)) ;; TODO: check tag
        (define (integer->char c) (%set-tag c ,(char-tag)))
        (define (char-between c c1 c2) ;; inclusive
@@ -785,7 +783,7 @@
   (define (bind-free-vars closure free-vars index)
     (if (null? free-vars)
 	'()
-	(cons `(,(car free-vars) (call read-ptr (var ,closure) (number ,(* index (word-size)))))
+	(cons `(,(car free-vars) (%read-mem (%as-fixnum (var ,closure)) (number ,(* index (word-size)))))
 	      (bind-free-vars closure (cdr free-vars) (+ 1 index)))))
 
   
