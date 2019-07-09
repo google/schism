@@ -254,10 +254,10 @@
          (or (>= i (string-length s1))
              (and (eq? (string-ref s1 i) (string-ref s2 i))
                   (string-equal-loop s1 s2 (+ i 1)))))
-       (define (hash-chars chars h)
-         (if (null? chars)
+       (define (hash-string s i h)
+         (if (eq? i (string-length s))
              h
-             (hash-chars (cdr chars) (+ (char->integer (car chars)) h))))
+             (hash-string s (+ 1 i) (+ (char->integer (string-ref s i)) h))))
        (define (make-symbol-table n)
          (if (zero? n)
              '()
@@ -284,7 +284,7 @@
              (begin
                (set-cdr! (%base-pair) (make-symbol-table ,(symbol-table-width)))
                (string->symbol str))
-             (let* ((idx (bitwise-and (hash-chars (string->list str) 0)
+             (let* ((idx (bitwise-and (hash-string str 0 0)
                                       ,(- (symbol-table-width) 1)))
                     (bucket (list-tail (%symbol-table) idx)))
                (or (%find-symbol-by-name str (car bucket))
