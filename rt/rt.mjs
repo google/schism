@@ -222,14 +222,8 @@ export class Engine {
     // that is the new location of root.
     collect(root) {
         const start_bytes = this.bytesAllocated;
-
-        // copy the heap
         const from_space = this.mem_i32.slice();
-        // reset the allocation pointer and symbol table
-        this.mem_i32[0] = 0;
-        this.mem_i32[1] = 0;
         const mem_i32 = this.mem_i32;
-
         const forwards = new Map;
 
         function alloc(num_words) {
@@ -263,24 +257,18 @@ export class Engine {
                     return replace_tag(deep_copy(replace_tag(ptr, TAGS.pair)), TAGS.string);
                 }
                 case TAGS.symbol: {
-                    // We can be sure this symbol is not in the symbol table, or else we
-                    // would have seen it already.
-                    let name = from_space[extract_value(ptr) * 2];
-                    name = deep_copy(name);
-                    const p = alloc(2);
-                    mem_i32[p / 4] = name;
-                    // set the cdr to the symbol table
-                    mem_i32[p / 4 + 1] = mem_i32[1];
-                    mem_i32[1] = replace_tag(p, TAGS.pair);
-                    const value = replace_tag(p, TAGS.symbol);
-                    forwards.set(ptr, value);
-                    return value;
+                    return replace_tag(deep_copy(replace_tag(ptr, TAGS.pair)), TAGS.symbol);
                 }
                 default:
                     throw new Error(`Unrecognized object tag ${tag}`);
             }
         }
 
+        // Reset the allocation pointer.
+        mem_i32[0] = 0;
+        // Copy and relocate the symbol table.
+        mem_i32[1] = deep_copy(mem_i32[1]);
+        // Copy the root.
         const result = deep_copy(root);
 
         //const end_bytes = this.bytesAllocated;

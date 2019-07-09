@@ -40,6 +40,7 @@
 
   (define (allocation-pointer) 0)
   (define (word-size) 4)
+  (define (symbol-table-width) 32)
 
   ;; ====================== ;;
   ;; Helpers, etc.          ;;
@@ -184,10 +185,12 @@
           ((null? ls) 0)
           ((pair? ls) (+ 1 (length (cdr ls))))
           (else (error 'length "argument is not a proper list"))))
-       (define (list-ref list n)
+       (define (list-tail list n)
 	 (if (zero? n)
-	     (car list)
-	     (list-ref (cdr list) (- n 1))))
+	     list
+	     (list-tail (cdr list) (- n 1))))
+       (define (list-ref list n)
+         (car (list-tail list n)))
        (define (append a b)
          (if (null? a) b (cons (car a) (append (cdr a) b))))
        (define (char->integer c) (%as-fixnum c)) ;; TODO: check tag
@@ -221,34 +224,40 @@
              (%unreachable)))
        (define (string-equal? s1 s2)
          (list-all-eq? (string->list s1) (string->list s2)))
-       (define (%find-symbol-by-name s table)
-         (if (or (zero? table) (null? table))
-             #f
-             (if (pair? table)
-                 ;; (car table) is not a string in the case of gensyms
-                 (if (and (string? (car table)) (string-equal? s (car table)))
-                     (%set-tag table ,(symbol-tag))
-                     (%find-symbol-by-name s (cdr table)))
-                 (error '%find-symbol-by-name "corrupt symbol table"))))
-       (define (string->symbol s)
-         (if (string? s)
-             (or (%find-symbol-by-name s (%symbol-table))
-                 (let ((x (cons s (%symbol-table))))
-                   (begin
-                     (set-cdr! (%base-pair) x)
-                     (%set-tag x ,(symbol-tag)))))
-             ;; calling error here can lead to an infinite loop, so we
-             ;; generate an unreachable instead.
-             (%unreachable)))
+       (define (hash-chars chars h)
+         (if (null? chars)
+             h
+             (hash-chars (cdr chars) (+ (char->integer (car chars)) h))))
+       (define (make-symbol-table n)
+         (if (zero? n)
+             '()
+             (cons '() (make-symbol-table (- n 1)))))
+       (define (%find-symbol-by-name s ls)
+         (and (pair? ls)
+              (if (string-equal? s (car ls))
+                  (%set-tag ls ,(symbol-tag))
+                  (%find-symbol-by-name s (cdr ls)))))
        (define (gensym t) ;; Creates a brand new symbol that cannot be reused
-         (let ((x (cons '() (%symbol-table))))
-           (begin (set-cdr! (%base-pair) x)
-                  (%set-tag x ,(symbol-tag)))))
+         (let ((x (cons #f '())))
+           (%set-tag x ,(symbol-tag))))
        (define (symbol->string x)
          (if (symbol? x)
-             (let ((s (car (%set-tag x ,(pair-tag)))))
-               (if (null? s) "<gensym>" s))
+             (or (car (%set-tag x ,(pair-tag)))
+                 "<gensym>")
              (error 'symbol->string "not a symbol")))
+       (define (string->symbol str)
+         (if (zero? (%symbol-table))
+             (begin
+               (set-cdr! (%base-pair) (make-symbol-table ,(symbol-table-width)))
+               (string->symbol str))
+             (let* ((idx (bitwise-and (hash-chars (string->list str) 0)
+                                      ,(- (symbol-table-width) 1)))
+                    (bucket (list-tail (%symbol-table) idx)))
+               (or (%find-symbol-by-name str (car bucket))
+                   (let ((x (cons str (car bucket))))
+                     (begin
+                       (set-car! bucket x)
+                       (%set-tag x ,(symbol-tag))))))))
        (define (list-all-eq? a b)
          (if (null? a)
              (null? b)
