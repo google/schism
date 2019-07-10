@@ -1614,8 +1614,7 @@
     (if (null? names)
         '()
         (cons (cons (number->leb-u8-list index)
-                    (encode-string (or (symbol->string (car names))
-                                       "<anonymous>")))
+                    (encode-string (symbol->string (car names))))
               (encode-name-maps (cdr names) (+ 1 index)))))
 
   (define (wasm-table-section num-items)
