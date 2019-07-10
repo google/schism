@@ -256,7 +256,9 @@
        (define (symbol->string x)
          (if (symbol? x)
              (let ((name (car (%set-tag x ,(pair-tag)))))
-               (and (string? name) name))
+               (if (string? name)
+                   name
+                   (list->string name)))
              (error 'symbol->string "not a symbol")))
        (define (string->symbol str)
          (if (zero? (%symbol-table))
