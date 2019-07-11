@@ -138,7 +138,7 @@ class Module {
 
 export class Engine {
     constructor() {
-        this.memory = new WebAssembly.Memory({ initial: 16384 });
+        this.memory = new WebAssembly.Memory({ initial: 4096 });
         this.mem_i32 = new Uint32Array(this.memory.buffer);
         this.rt = rt(this);
         this.input_port_data = [];
