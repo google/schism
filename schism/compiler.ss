@@ -269,10 +269,12 @@
          (if (null? chars)
              h
              (hash-chars (cdr chars) (+ (char->integer (car chars)) h))))
-       (define (make-symbol-table n)
-         (if (zero? n)
-             '()
-             (cons '() (make-symbol-table (- n 1)))))
+       (define (init-symbol-table table i)
+         (if (eq? i (vector-length table))
+             table
+             (begin
+               (vector-set! table i '())
+               (init-symbol-table table (+ i 1)))))
        (define (%find-symbol-by-name s ls)
          (and (pair? ls)
               (if (string-equal? s (car ls))
@@ -291,15 +293,15 @@
        (define (string->symbol str)
          (if (zero? (%symbol-table))
              (begin
-               (set-cdr! (%base-pair) (make-symbol-table ,(symbol-table-width)))
+               (set-cdr! (%base-pair) (init-symbol-table (make-vector ,(symbol-table-width)) 0))
                (string->symbol str))
              (let* ((idx (bitwise-and (hash-chars (string->list str) 0)
                                       ,(- (symbol-table-width) 1)))
-                    (bucket (list-tail (%symbol-table) idx)))
-               (or (%find-symbol-by-name str (car bucket))
-                   (let ((x (cons str (car bucket))))
+                    (bucket (vector-ref (%symbol-table) idx)))
+               (or (%find-symbol-by-name str bucket)
+                   (let ((x (cons str bucket)))
                      (begin
-                       (set-car! bucket x)
+                       (vector-set! (%symbol-table) idx x)
                        (%set-tag x ,(symbol-tag))))))))
        (define (list-all-eq? a b)
          (if (null? a)
