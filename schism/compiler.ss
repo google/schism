@@ -467,6 +467,10 @@
           (cond
            ((eq? tag 'quote) expr)
 	   ((eq? tag 'quasiquote) (map (lambda (e) (expand-macros-quasiquote e)) expr))
+           ((eq? tag 'when)
+            (expand-macros `(if ,(cadr expr) (begin . ,(cddr expr)) (begin))))
+           ((eq? tag 'unless)
+            (expand-macros `(if ,(cadr expr) (begin) (begin . ,(cddr expr)))))
            ((eq? tag 'or)
             (if (null? (cdr expr))
                 #f
