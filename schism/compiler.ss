@@ -801,8 +801,14 @@
     ;; those cases..
     (if (null? vars)
         body
-        (or (inline-let vars values body)
-            (reify-let vars values body))))
+        (if (and (eq? (car body) 'if)
+                 (literal? (caddr body))
+                 (literal? (cadddr body)))
+            `(if ,(beta-reduce vars values (cadr body))
+                 ,(caddr body)
+                 ,(cadddr body))
+            (or (inline-let vars values body)
+                (reify-let vars values body)))))
 
   (define (simplify-expr expr)
     (let ((tag (car expr)))
