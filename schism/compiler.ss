@@ -1,4 +1,4 @@
-;; Copyright 2018 Google LLC
+;; Copyright 2018, 2019 Google LLC
 ;;
 ;; Licensed under the Apache License, Version 2.0 (the License);
 ;; you may not use this file except in compliance with the License.
@@ -743,12 +743,15 @@
      `(if ,t ,c ,a)))
 
   (define (inline-call-args vars values args)
-    (if (null? args)
-        '()
-        (cons (and (eq? (caar args) 'var)
-                   (eq? (cadar args) (car vars))
-                   (car values))
-              (inline-call-args (cdr vars) (cdr values) (cdr args)))))
+    (cond
+     ((null? args) '())
+     ((null? vars) #f)
+     (else
+      (let ((tail (inline-call-args (cdr vars) (cdr values) (cdr args))))
+        (and tail
+             (eq? (caar args) 'var)
+             (eq? (cadar args) (car vars))
+             (cons (car values) tail))))))
   (define (inline-let vars values body)
     (and (memq (car body) '(call icall))
          (let ((inlined (inline-call-args vars values (cddr body))))
@@ -765,8 +768,14 @@
     ;; those cases..
     (if (null? vars)
         body
-        (or (inline-let vars values body)
-            (reify-let vars values body))))
+        (if (and (eq? (car body) 'if)
+                 (literal? (caddr body))
+                 (literal? (cadddr body)))
+            `(if ,(beta-reduce vars values (cadr body))
+                 ,(caddr body)
+                 ,(cadddr body))
+            (or (inline-let vars values body)
+                (reify-let vars values body)))))
 
   (define (simplify-expr expr)
     (let ((tag (car expr)))
