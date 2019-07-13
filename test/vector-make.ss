@@ -18,5 +18,5 @@
   (import (rnrs))
 
   (define (do-test)
-    (let ((v (make-vector 3)))
+    (let ((v (make-vector 3 '())))
       (vector? v))))

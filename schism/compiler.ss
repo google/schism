@@ -149,15 +149,21 @@
              ;; Add one dword to the pointer we allocated to make sure
              ;; we skip the base air.
              (%set-tag (+ allocation 1) tag))))
-       (define (make-vector n)
+       (define (make-vector n init)
          ;; Allocate n + 1 words. %alloc will automatically round up
          ;; if needed.
          (let* ((num-words (+ 1 n))
-                (s (%alloc ,(vector-tag) num-words)))
+                (v (%alloc ,(vector-tag) num-words)))
            (begin
              ;; Save the length of the vector.
-             (%store-mem (%as-fixnum s) 0 n)
-             s)))
+             (%store-mem (%as-fixnum v) 0 n)
+             (vector-fill-loop! v init 0)
+             v)))
+       (define (vector-fill-loop! v obj i)
+         (if (eq? i (vector-length v))
+             (begin)
+             (begin (vector-set! v i obj)
+                    vector-fill-loop! v obj (+ 1 i))))
        (define (vector-set! v i c)
          (if (and (vector? v)
                   (< i (vector-length v)))
@@ -293,7 +299,7 @@
        (define (string->symbol str)
          (if (zero? (%symbol-table))
              (begin
-               (set-cdr! (%base-pair) (init-symbol-table (make-vector ,(symbol-table-width)) 0))
+               (set-cdr! (%base-pair) (init-symbol-table (make-vector ,(symbol-table-width) '()) 0))
                (string->symbol str))
              (let* ((idx (bitwise-and (hash-chars (string->list str) 0)
                                       ,(- (symbol-table-width) 1)))
