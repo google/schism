@@ -22,6 +22,8 @@ const TAGS = {
     character: 3,
     string: 4,
     symbol: 5,
+    procedure: 6,
+    vector: 7
 };
 
 function tag_constant(value, tag) {
@@ -63,6 +65,8 @@ function js_from_scheme(ptr) {
         return SCHEME_CONSTANTS[extract_value(ptr)];
     case TAGS.character:
         return String.fromCharCode(extract_value(ptr));
+    case TAGS.pair:
+        return `<pair ${ptr.toString(16)}>`
     default:
         throw new Error(`Unrecognized object tag: ${extract_tag(ptr)}, ptr=${ptr.toString(16)}`);
     }
@@ -288,21 +292,22 @@ export class Engine {
             }
             case TAGS.character: return ptr;
             case TAGS.string: {
-                if (extract_tag(from_space[extract_value(ptr) * 2]) == TAGS.fixnum) {
-                    // new style string
-                    const length = extract_value(from_space[extract_value(ptr) * 2]);
-                    const p = alloc(1 + length);
-                    mem_i32[p / 4] = tag_constant(length, TAGS.fixnum);
-                    for (let i = 0; i < length; i++) {
-                        mem_i32[p / 4 + i + 1] = from_space[extract_value(ptr) * 2 + 1 + i];
-                    }
-                    return p;
-                } else {
-                    return replace_tag(deep_copy(replace_tag(ptr, TAGS.pair)), TAGS.string);
-                }
+                return replace_tag(deep_copy(replace_tag(ptr, TAGS.vector)), TAGS.string);
             }
             case TAGS.symbol: {
                 return replace_tag(deep_copy(replace_tag(ptr, TAGS.pair)), TAGS.symbol);
+            }
+            case TAGS.vector: {
+                const vec = extract_value(ptr) * 2;
+                const length = extract_value(from_space[vec]);
+                const newvec = alloc(length + 1);
+                mem_i32[newvec / 4] = tag_constant(length, TAGS.fixnum);
+                for (let i = 0; i < length; i++) {
+                    mem_i32[newvec / 4 + 1 + i] = deep_copy(from_space[vec + 1 + i]);
+                }
+                const new_ptr = replace_tag(newvec, TAGS.vector);
+                forwards.set(ptr, new_ptr)
+                return new_ptr;
             }
             default:
                 throw new Error(`Unrecognized object tag ${tag}`);
@@ -316,9 +321,10 @@ export class Engine {
         // Copy the root.
         const result = deep_copy(root);
 
-        const end_bytes = this.bytesAllocated;
-        const reclaimed = start_bytes - end_bytes;
-        console.info(`Reclaimed ${reclaimed / 1024 / 1024} MiB (${reclaimed / start_bytes * 100}%)`);
+        // const end_bytes = this.bytesAllocated;
+        // const reclaimed = start_bytes - end_bytes;
+        // console.info(`Reclaimed ${Math.round(reclaimed / 1024 / 1024)} MiB`
+        //     + ` (${Math.round(reclaimed / start_bytes * 100)}%)`);
 
         return result;
     }

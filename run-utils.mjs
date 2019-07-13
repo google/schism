@@ -52,10 +52,10 @@ function make_compiler(compiler_bytes, name) {
         const engine = new Schism.Engine;
         const schism = await engine.loadWasmModule(await compiler_bytes());
         engine.setCurrentInputPort(bytes);
-        // let module_package = schism.exports['compile-stdin->module-package']();
-        // module_package = engine.collect(module_package);
-        // schism.exports['compile-module-package->stdout'](module_package);
-        schism.exports['compile-stdin->stdout']();
+        let module_package = schism.exports['compile-stdin->module-package']();
+        module_package = engine.collect(module_package);
+        schism.exports['compile-module-package->stdout'](module_package);
+        // schism.exports['compile-stdin->stdout']();
         //console.info(`Done compiling ${programName} with ${name}`);
         return new Uint8Array(engine.output_data);
     }
