@@ -37,6 +37,7 @@
   (define (string-tag) 4)
   (define (symbol-tag) 5)
   (define (closure-tag) 6)
+  (define (vector-tag) 7)
 
   (define (allocation-pointer) 0)
   (define (word-size) 4)
@@ -70,8 +71,10 @@
        (%wasm-import "rt" (error where what))
        (%wasm-import "rt" (%log-char c))
        (%wasm-import "rt" (%flush-log))
-       ;; display, newline, etc are all just enough to compile. We'll fill them in later.
        (define (display x)
+         ;; display, and all of the functions it calls, must not
+         ;; allocate so that we can use it to debug allocation
+         ;; routines.
          (cond
           ((pair? x)
            (begin (%log-char #\()
@@ -146,6 +149,37 @@
              ;; Add one dword to the pointer we allocated to make sure
              ;; we skip the base air.
              (%set-tag (+ allocation 1) tag))))
+       (define (make-vector n init)
+         ;; Allocate n + 1 words. %alloc will automatically round up
+         ;; if needed.
+         (let* ((num-words (+ 1 n))
+                (v (%alloc ,(vector-tag) num-words)))
+           (begin
+             ;; Save the length of the vector.
+             (%store-mem (%as-fixnum v) 0 n)
+             (vector-fill-loop! v init 0)
+             v)))
+       (define (vector-fill-loop! v obj i)
+         (if (eq? i (vector-length v))
+             (begin)
+             (begin (vector-set! v i obj)
+                    vector-fill-loop! v obj (+ 1 i))))
+       (define (vector-set! v i c)
+         (if (and (vector? v)
+                  (< i (vector-length v)))
+             (begin 
+               (%store-mem v (* ,(word-size) (+ i 1)) c)
+               (begin))
+             (error 'vector-set! "Invalid arguments")))
+       (define (vector-ref v i)
+         (if (and (vector? v)
+                  (< i (vector-length v)))
+             (%read-mem (%as-fixnum v) (* ,(word-size) (+ 1 i)))
+             (error 'vector-ref "Invalid arguments")))
+       (define (vector-length v)
+         (if (vector? v)
+             (%read-mem (%as-fixnum v) 0)
+             (error 'vector-length "Not a vector")))
        (define (cons a d)
          (let ((p (%alloc ,(pair-tag) 2)))
            (begin
@@ -241,10 +275,12 @@
          (if (null? chars)
              h
              (hash-chars (cdr chars) (+ (char->integer (car chars)) h))))
-       (define (make-symbol-table n)
-         (if (zero? n)
-             '()
-             (cons '() (make-symbol-table (- n 1)))))
+       (define (init-symbol-table table i)
+         (if (eq? i (vector-length table))
+             table
+             (begin
+               (vector-set! table i '())
+               (init-symbol-table table (+ i 1)))))
        (define (%find-symbol-by-name s ls)
          (and (pair? ls)
               (if (string-equal? s (car ls))
@@ -263,15 +299,15 @@
        (define (string->symbol str)
          (if (zero? (%symbol-table))
              (begin
-               (set-cdr! (%base-pair) (make-symbol-table ,(symbol-table-width)))
+               (set-cdr! (%base-pair) (init-symbol-table (make-vector ,(symbol-table-width) '()) 0))
                (string->symbol str))
              (let* ((idx (bitwise-and (hash-chars (string->list str) 0)
                                       ,(- (symbol-table-width) 1)))
-                    (bucket (list-tail (%symbol-table) idx)))
-               (or (%find-symbol-by-name str (car bucket))
-                   (let ((x (cons str (car bucket))))
+                    (bucket (vector-ref (%symbol-table) idx)))
+               (or (%find-symbol-by-name str bucket)
+                   (let ((x (cons str bucket)))
                      (begin
-                       (set-car! bucket x)
+                       (vector-set! (%symbol-table) idx x)
                        (%set-tag x ,(symbol-tag))))))))
        (define (list-all-eq? a b)
          (if (null? a)
@@ -403,6 +439,8 @@
          (eq? (%get-tag p) ,(symbol-tag)))
        (define (procedure? p)
          (eq? (%get-tag p) ,(closure-tag)))
+       (define (vector? p)
+         (eq? (%get-tag p) ,(vector-tag)))
        (define (map p ls)
 	 (if (null? ls)
 	     '()
