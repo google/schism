@@ -74,17 +74,18 @@
           ((null? x) (%log-char #\() (%log-char #\)))
           ((symbol? x) (%display-symbol x))
           ((boolean? x) (%log-char #\#) (%log-char (if x #\t #\f)))
-          ((number? x) (%display-leading-digits (/ x 10)) (%display-least-significant-digit x))
+          ((number? x)
+           (%display-leading-digits (div0 x 10))
+           (%display-least-significant-digit x))
           ((char? x) (%log-char #\#) (%log-char #\\) (%log-char x))
           ((string? x) (%log-char #\") (%display-raw-string x) (%log-char #\"))
           (else (%display-raw-string "<!display unknown unimplemented!>"))))
        (define (%display-leading-digits n)
          (unless (zero? n)
-           (%display-leading-digits (/ n 10))
+           (%display-leading-digits (div0 n 10))
            (%display-least-significant-digit n)))
        (define (%display-least-significant-digit n)
-         (let ((n (- n (* 10 (/ n 10))))) ;; apparently we don't support mod yet
-           (%log-char (integer->char (+ (char->integer #\0) n)))))
+         (%log-char (integer->char (+ (char->integer #\0) (mod0 n 10)))))
        (define (%display-pair-tail x)
          (cond
           ((null? x) (%log-char #\)))
@@ -134,7 +135,7 @@
          ;; for the three tag bits. Since we always mask off the
          ;; bottom three bits, we need to allocate in double-words. We
          ;; add 1 before dividing to make sure we round up if needed.
-         (let* ((dwords (/ (+ 1 num-words) 2))
+         (let* ((dwords (div0 (+ 1 num-words) 2))
                 (new-alloc-pointer (+ dwords (car (%base-pair))))
                 (allocation (car (%base-pair))))
            (set-car! (%base-pair) new-alloc-pointer)
@@ -440,7 +441,8 @@
       (scm + x y)
       (scm * x y)
       (scm - x y)
-      (scm / x y)
+      (scm div0 x y)
+      (scm mod0 x y)
       (bool eq? x y)
       (bool < x y)))
 
@@ -802,7 +804,7 @@
                       ,(simplify-drop (caddr expr))
                       ,(simplify-drop (cadddr expr))))
            ((or (eq? tag 'drop) (eq? tag 'if/void))
-            (%unreachable))
+            (trace-and-error expr 'simplify-drop "unrecognized-expr"))
            (else
             `(drop ,expr))))))
 
@@ -1123,10 +1125,16 @@
             (b (compile-expr (cadr args) env)))
         ;; Shift only one of them and we don't have to shift back when we're done.
         `(i32.mul (i32.shr_s ,a (i32.const ,(tag-size))) ,b)))
-     ((eq? op '/)
+     ((eq? op 'div0)
       (let ((a (compile-expr (car args) env))
             (b (compile-expr (cadr args) env)))
         `(i32.shl (i32.div_s (i32.shr_s ,a (i32.const ,(tag-size)))
+                             (i32.shr_s ,b (i32.const ,(tag-size))))
+                  (i32.const ,(tag-size)))))
+     ((eq? op 'mod0)
+      (let ((a (compile-expr (car args) env))
+            (b (compile-expr (cadr args) env)))
+        `(i32.shl (i32.rem_s (i32.shr_s ,a (i32.const ,(tag-size)))
                              (i32.shr_s ,b (i32.const ,(tag-size))))
                   (i32.const ,(tag-size)))))
      ((eq? op 'fixnum->i32)
@@ -1267,12 +1275,16 @@
         (cons (cons (car vars) index) (number-variables (cdr vars) (+ 1 index)))
         '()))
 
+  (define (types-equal? t1* t2*)
+    (if (and (pair? t1*) (pair? t2*))
+        (and (eq? (car t1*) (car t2*))
+             (types-equal? (cdr t1*) (cdr t2*)))
+        (and (null? t1*) (null? t2*))))
   (define (type-equal? t1 t2)
     (or (eq? t1 t2)
-	(if (and (pair? t1) (pair? t2))
-	    (and (list-all-eq? (cadr t1) (cadr t2))
-		 (list-all-eq? (caddr t1) (caddr t2)))
-	    #f)))
+	(and (pair? t1) (pair? t2)
+             (types-equal? (cadr t1) (cadr t2))
+             (types-equal? (caddr t1) (caddr t2)))))
 
   (define (lookup-type t types)
     (if (null? types)
@@ -1345,7 +1357,7 @@
 
   (define (wasm-simple-op? op)
     (or (eq? op 'i32.and) (eq? op 'i32.add) (eq? op 'i32.sub) (eq? op 'i32.mul)
-	(eq? op 'i32.div_s)
+	(eq? op 'i32.div_s) (eq? op 'i32.rem_s)
         (eq? op 'i32.or) (eq? op 'i32.xor) (eq? op 'i32.eq)
         (eq? op 'i32.lt_s) (eq? op 'i32.shr_s) (eq? op 'i32.shl) (eq? op 'drop)
         (eq? op 'unreachable)))
@@ -1416,11 +1428,18 @@
   ;; ====================== ;;
   ;; Wasm Binary Generation ;;
   ;; ====================== ;;
-  (define (number->leb-u8-list n)
-    (if (and (< n #x40) (> n (- 0 #x40)))
+  (define (encode-sleb n)
+    (if (let ((n* (+ n 64)))
+          (eq? n* (bitwise-and n* #x7f)))
         `(,(bitwise-and n #x7f))
-        (cons (bitwise-ior #x80 (bitwise-and n 127))
-              (number->leb-u8-list (bitwise-arithmetic-shift-right n 7)))))
+        (cons (bitwise-ior #x80 (bitwise-and n #x7f))
+              (encode-sleb (bitwise-arithmetic-shift-right n 7)))))
+  (define (encode-uleb n)
+    (let ((next (bitwise-arithmetic-shift-right n 7)))
+      (if (zero? next)
+          `(,n)
+          (cons (bitwise-ior #x80 (bitwise-and n #x7f))
+                (encode-uleb next)))))
 
   (define (encode-string s)
     (let ((chars (string->list s)))
@@ -1430,7 +1449,7 @@
     '(#x00 #x61 #x73 #x6d #x01 #x00 #x00 #x00))
 
   (define (make-vec length contents)
-    (cons (number->leb-u8-list length) contents))
+    (cons (encode-uleb length) contents))
 
   ;; id is the number, contents is a list of bytes
   (define (byte-count ls)
@@ -1462,7 +1481,7 @@
           (name (cadr import)))
       (cons (encode-string module)
             (cons (encode-string name)
-                  (cons '(#x00) (number->leb-u8-list (caddr import)))))))
+                  (cons '(#x00) (encode-uleb (caddr import)))))))
   (define (encode-memory-import)
     (cons (encode-string "memory")
           (cons (encode-string "memory")
@@ -1475,7 +1494,7 @@
                                       (encode-memory-import)))))
 
   (define (encode-u32-vec nums)
-    (make-vec (length nums) (map number->leb-u8-list nums)))
+    (make-vec (length nums) (map encode-uleb nums)))
 
   (define (wasm-function-section function-type-ids)
     (make-section 3 (encode-u32-vec function-type-ids)))
@@ -1483,7 +1502,7 @@
   (define (encode-export export)
     (cond
      ((eq? (car export) 'fn)
-      (cons (encode-string (caddr export)) (cons #x00 (number->leb-u8-list (cadr export)))))
+      (cons (encode-string (caddr export)) (cons #x00 (encode-uleb (cadr export)))))
      (else
       (trace-and-error export 'encode-export "unrecognized export"))))
   (define (wasm-export-section exports)
@@ -1498,7 +1517,7 @@
        ((eq? tag 'seq)
         (cons (encode-expr (cadr expr)) (encode-expr (caddr expr))))
        ((eq? tag 'i32.const)
-        (cons #x41 (number->leb-u8-list (cadr expr))))
+        (cons #x41 (encode-sleb (cadr expr))))
        ((eq? tag 'i32.eqz)
         (cons (encode-expr (cadr expr)) '(#x45)))
        ((eq? tag 'i32.eq)
@@ -1506,15 +1525,15 @@
        ((eq? tag 'i32.lt_s)
         (encode-simple-op #x48 expr))
        ((eq? tag 'get-local)
-        (cons #x20 (number->leb-u8-list (cadr expr))))
+        (cons #x20 (encode-uleb (cadr expr))))
        ((eq? tag 'set-local)
-	(cons #x21 (number->leb-u8-list (cadr expr))))
+	(cons #x21 (encode-uleb (cadr expr))))
        ((eq? tag 'call)
         (cons (map encode-expr (cddr expr))
-              (cons #x10 (number->leb-u8-list (cadr expr)))))
+              (cons #x10 (encode-uleb (cadr expr)))))
        ((eq? tag 'call-indirect)
 	`(,(map encode-expr (cddr expr))
-	  (#x11 ,(number->leb-u8-list (cadr expr)) #x00)))
+	  (#x11 ,(encode-uleb (cadr expr)) #x00)))
        ((or (eq? tag 'if) (eq? tag 'if/void))
         (let ((type (if (eq? tag 'if) 'i32 'void))
               (t (cadr expr))
@@ -1531,13 +1550,13 @@
               (value (encode-expr (cadddr expr))))
           (cons (cons index value)
                 (cons '(#x36 #x0) ;;always use 0 alignment
-                      (number->leb-u8-list offset)))))
+                      (encode-uleb offset)))))
        ((eq? tag 'i32.load)
         (let ((align 0)
               (offset (cadadr expr))
               (index (encode-expr (caddr expr))))
           (cons index (cons '(#x28 #x0) ;;always use 0 alignment
-                            (number->leb-u8-list offset)))))
+                            (encode-uleb offset)))))
        ((eq? tag 'i32.add)
         (encode-simple-op #x6a expr))
        ((eq? tag 'i32.sub)
@@ -1546,6 +1565,8 @@
         (encode-simple-op #x6c expr))
        ((eq? tag 'i32.div_s)
         (encode-simple-op #x6d expr))
+       ((eq? tag 'i32.rem_s)
+        (encode-simple-op #x6f expr))
        ((eq? tag 'i32.and)
         (encode-simple-op #x71 expr))
        ((eq? tag 'i32.or)
@@ -1569,7 +1590,7 @@
     (let ((contents (cons
                      (if (zero? locals)
                          (make-vec 0 '())
-                         (make-vec 1 (cons (number->leb-u8-list locals) '(#x7f))))
+                         (make-vec 1 (cons (encode-uleb locals) '(#x7f))))
                      (cons (encode-expr body)
                            '(#x0b)))))
       (make-vec (byte-count contents) contents)))
@@ -1586,18 +1607,18 @@
   (define (encode-name-maps names index)
     (if (null? names)
         '()
-        (cons (cons (number->leb-u8-list index)
+        (cons (cons (encode-uleb index)
                     (encode-string (symbol->string (car names))))
               (encode-name-maps (cdr names) (+ 1 index)))))
 
   (define (wasm-table-section num-items)
     (make-section 4 (make-vec 1
-			      `(#x70 #x00 . ,(number->leb-u8-list num-items)))))
+			      `(#x70 #x00 . ,(encode-uleb num-items)))))
 
   (define (encode-numbers numbers)
     (if (null? numbers)
 	'()
-	(cons (number->leb-u8-list (car numbers)) (encode-numbers (cdr numbers)))))
+	(cons (encode-uleb (car numbers)) (encode-numbers (cdr numbers)))))
   (define (wasm-element-section element-ids)
     (make-section 9 (make-vec 1 `(0 ,(encode-expr `(i32.const 0))
 				    #x0b
