@@ -804,7 +804,7 @@
                       ,(simplify-drop (caddr expr))
                       ,(simplify-drop (cadddr expr))))
            ((or (eq? tag 'drop) (eq? tag 'if/void))
-            (%unreachable))
+            (trace-and-error expr 'simplify-drop "unrecognized-expr"))
            (else
             `(drop ,expr))))))
 
@@ -1275,12 +1275,16 @@
         (cons (cons (car vars) index) (number-variables (cdr vars) (+ 1 index)))
         '()))
 
+  (define (types-equal? t1* t2*)
+    (if (and (pair? t1*) (pair? t2*))
+        (and (eq? (car t1*) (car t2*))
+             (types-equal? (cdr t1*) (cdr t2*)))
+        (and (null? t1*) (null? t2*))))
   (define (type-equal? t1 t2)
     (or (eq? t1 t2)
-	(if (and (pair? t1) (pair? t2))
-	    (and (list-all-eq? (cadr t1) (cadr t2))
-		 (list-all-eq? (caddr t1) (caddr t2)))
-	    #f)))
+	(and (pair? t1) (pair? t2)
+             (types-equal? (cadr t1) (cadr t2))
+             (types-equal? (caddr t1) (caddr t2)))))
 
   (define (lookup-type t types)
     (if (null? types)
