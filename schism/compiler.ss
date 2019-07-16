@@ -74,17 +74,18 @@
           ((null? x) (%log-char #\() (%log-char #\)))
           ((symbol? x) (%display-symbol x))
           ((boolean? x) (%log-char #\#) (%log-char (if x #\t #\f)))
-          ((number? x) (%display-leading-digits (/ x 10)) (%display-least-significant-digit x))
+          ((number? x)
+           (%display-leading-digits (div0 x 10))
+           (%display-least-significant-digit x))
           ((char? x) (%log-char #\#) (%log-char #\\) (%log-char x))
           ((string? x) (%log-char #\") (%display-raw-string x) (%log-char #\"))
           (else (%display-raw-string "<!display unknown unimplemented!>"))))
        (define (%display-leading-digits n)
          (unless (zero? n)
-           (%display-leading-digits (/ n 10))
+           (%display-leading-digits (div0 n 10))
            (%display-least-significant-digit n)))
        (define (%display-least-significant-digit n)
-         (let ((n (- n (* 10 (/ n 10))))) ;; apparently we don't support mod yet
-           (%log-char (integer->char (+ (char->integer #\0) n)))))
+         (%log-char (integer->char (+ (char->integer #\0) (mod0 n 10)))))
        (define (%display-pair-tail x)
          (cond
           ((null? x) (%log-char #\)))
@@ -134,7 +135,7 @@
          ;; for the three tag bits. Since we always mask off the
          ;; bottom three bits, we need to allocate in double-words. We
          ;; add 1 before dividing to make sure we round up if needed.
-         (let* ((dwords (/ (+ 1 num-words) 2))
+         (let* ((dwords (div0 (+ 1 num-words) 2))
                 (new-alloc-pointer (+ dwords (car (%base-pair))))
                 (allocation (car (%base-pair))))
            (set-car! (%base-pair) new-alloc-pointer)
@@ -440,7 +441,6 @@
       (scm + x y)
       (scm * x y)
       (scm - x y)
-      (scm / x y)
       (scm div0 x y)
       (scm mod0 x y)
       (bool eq? x y)
@@ -1125,12 +1125,6 @@
             (b (compile-expr (cadr args) env)))
         ;; Shift only one of them and we don't have to shift back when we're done.
         `(i32.mul (i32.shr_s ,a (i32.const ,(tag-size))) ,b)))
-     ((eq? op '/)
-      (let ((a (compile-expr (car args) env))
-            (b (compile-expr (cadr args) env)))
-        `(i32.shl (i32.div_s (i32.shr_s ,a (i32.const ,(tag-size)))
-                             (i32.shr_s ,b (i32.const ,(tag-size))))
-                  (i32.const ,(tag-size)))))
      ((eq? op 'div0)
       (let ((a (compile-expr (car args) env))
             (b (compile-expr (cadr args) env)))
