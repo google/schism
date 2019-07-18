@@ -671,7 +671,7 @@
            (primitives-env (add-top-levels primitives env))
            (body-env (add-top-levels defs primitives-env)))
       (cons exports
-            (append (compute-imported-functions "rt2" imports)
+            (append (compute-imported-functions "rt" imports)
                     (append (parse-functions primitives primitives-env)
                             (parse-functions defs body-env))))))
 
