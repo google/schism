@@ -480,9 +480,9 @@
                 #t
                 (if (null? (cddr expr))
                     (expand-macros (cadr expr))
-                    (let ((t (gensym "t")))
-                      `(let ((,t ,(expand-macros (cadr expr))))
-                         (if ,t ,(expand-macros (cons 'and (cddr expr))) #f))))))
+                    `(if ,(expand-macros (cadr expr))
+                         ,(expand-macros (cons 'and (cddr expr)))
+                         #f))))
            ((eq? tag 'not)
             `(if ,(expand-macros (cadr expr)) #f #t))
            ((eq? tag 'cond)
