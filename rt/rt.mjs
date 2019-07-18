@@ -14,119 +14,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-const TAG_SIZE = 3;
-const TAGS = {
-    fixnum: 0,
-    constant: 1,
-    pair: 2,
-    character: 3,
-    string: 4,
-    symbol: 5,
-};
-
-function tag_constant(value, tag) {
-    return (value << TAG_SIZE) | tag;
-}
-
-function replace_tag(ptr, tag) {
-    return tag_constant(extract_value(ptr), tag);
-}
-
-function extract_tag(value) {
-    return value & ((1 << TAG_SIZE) - 1);
-}
-
-function extract_value(value) {
-    return value >>> TAG_SIZE;
-}
-
-const SCHEME_CONSTANTS = {
-    0: false,
-    1: true,
-    2: null,
-    3: "#<eof-object>",
-}
-
-const CONSTANTS = {
-    false: tag_constant(0, TAGS.constant),
-    true: tag_constant(1, TAGS.constant),
-    null: tag_constant(2, TAGS.constant),
-    eof: tag_constant(3, TAGS.constant)
-}
-
-// Convert a Scheme ptr into a corresponding JavaScript value
-function js_from_scheme(ptr) {
-    switch (extract_tag(ptr)) {
-        case TAGS.fixnum:
-            return ptr >> TAG_SIZE; // sign extending shift so negatives work.
-        case TAGS.constant:
-            return SCHEME_CONSTANTS[extract_value(ptr)];
-        case TAGS.character:
-            return String.fromCharCode(extract_value(ptr));
-    }
-}
-
-// Convert a JS value into a Scheme ptr
-function scheme_from_js(value) {
-    const type = typeof value;
-    switch(type) {
-        case 'number':
-            return value << TAG_SIZE;
-        case 'boolean':
-            return CONSTANTS[value];
-        default:
-            throw new Error(`Converting a ${type} has not been implemented`);
-    }
-}
-
-function fixnum_from_number(n) {
-    return n << TAG_SIZE;
-}
-
 class SchemeError extends Error {
     constructor(where, what) {
         super(`Scheme runtime error in ${where}: ${what}`);
         this.where = where
         this.what = what
-    }
-}
-
-function rt(engine) {
-    function peek() {
-        if (engine.input_index < engine.input_port_data.length) {
-            const val = engine.input_port_data[engine.input_index];
-            return tag_constant(val, TAGS.character);
-        }
-        return CONSTANTS.eof;
-    }
-
-    return {
-        'rt-add1': function (ptr) {
-            // This is a trivial function that is mostly used to test function imports.
-            return fixnum_from_number(js_from_scheme(ptr) + 1);
-        },
-        'read-char': function () {
-            const val = peek();
-            if (peek != CONSTANTS.eof) {
-                engine.input_index++;
-            }
-            return val;
-        },
-        'peek-char': peek,
-        'write-char': function (ptr) {
-            const byte = js_from_scheme(ptr).charCodeAt(0);
-            engine.output_data.push(byte);
-        },
-        'error': function (where, what) {
-            throw new SchemeError(engine.schemeToString(where), engine.schemeToString(what));
-        },
-        '%log-char': c => {
-            engine.log += engine.jsFromScheme(c);
-        },
-        '%flush-log': () => {
-            console.info(engine.log);
-            engine.log = "";
-        }
     }
 }
 
@@ -286,15 +178,7 @@ export class Closure {
     }
 }
 
-function getOrCreate(tab, key, create, init=key) {
-    if (tab.has(key))
-        return tab.get(key);
-    const handle = create(init);
-    tab.set(key, handle);
-    return handle;
-}
-
-function rt2(engine, heap) {
+function rt(engine, heap) {
     function peek() {
         if (engine.input_index < engine.input_port_data.length) {
             return engine.input_port_data[engine.input_index];
@@ -426,9 +310,8 @@ export class Engine {
     constructor() {
         this.memory = new WebAssembly.Memory({ initial: 4096 });
         this.mem_i32 = new Uint32Array(this.memory.buffer);
-        this.rt = rt(this);
         this.heap = new Heap;
-        this.rt2 = rt2(this, this.heap);
+        this.rt = rt(this, this.heap);
         this.input_port_data = [];
         this.input_index = 0;
         this.output_data = [];
@@ -439,7 +322,7 @@ export class Engine {
     async loadWasmModule(bytes) {
         const import_object = {
             'rt': this.rt,
-            'rt2': this.rt2,
+            'rt2': this.rt,
             'memory': { 'memory': this.memory }
         };
 
@@ -463,11 +346,8 @@ export class Engine {
     }
 
     jsFromScheme(handle) {
-        // heap = this.heap;
-        // return heap.get(handle).toJS(heap, new Map);
-
-        // FIXME: Remove after bootstrap.
-        return true;
+        const heap = this.heap;
+        return heap.get(handle).toJS(heap, new Map);
     }
 
     schemeFromJs(value) {
@@ -491,9 +371,6 @@ export class Engine {
     // root set are reachable from root, and returns a pointer into the new heap
     // that is the new location of root.
     collect(root) {
-        // FIXME: Re-enable after bootstrap.
-        return root;
-
         // const start_bytes = this.bytesAllocated;
         const old_heap = this.heap;
         const new_heap = new Heap;
