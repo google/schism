@@ -446,9 +446,6 @@
       (bool eq? x y)
       (bool < x y)))
 
-  (define (literal? x)
-    (and (pair? x) (memq (car x) '(bool char number null void))))
-
   ;; ====================== ;;
   ;; Parsing                ;;
   ;; ====================== ;;
@@ -712,8 +709,29 @@
   ;; intrinsics.  This pass simplifies away the introduced complexity
   ;; where it's not needed.
 
+  (define (and-map f ls)
+    (or (null? ls) (and (f (car ls)) (and-map f (cdr ls)))))
+  (define (effect-free-callee? callee)
+    ;; Imports known to be effect-free.
+    (memq callee '(%peek-char)))
+  (define (effect-free-intrinsic? op)
+    (memq op '(eof-object
+               %read-mem %get-tag %set-tag %as-fixnum
+               bitwise-not bitwise-and bitwise-ior
+               bitwise-arithmetic-shift-left bitwise-arithmetic-shift-right
+               + * - eq? <)))
   (define (effect-free? expr)
-    (or (literal? expr) (eq? (car expr) 'lambda) (eq? (car expr) 'var)))
+    (let ((tag (car expr)))
+      (or (eq? tag 'lambda)
+          (eq? tag 'var)
+          (literal-expr? expr)
+          (and (eq? tag 'call)
+               (effect-free-callee? (cadr expr))
+               (and-map effect-free? (cddr expr)))
+          (and (eq? tag 'icall)
+               (effect-free-intrinsic? (cadr expr))
+               (and-map effect-free? (cddr expr))))))
+
   (define (simplify-seq head tail)
     (cond
      ((eq? (car head) 'nop) tail)
@@ -723,12 +741,30 @@
       (simplify-seq (simplify-seq head (cadr tail)) (caddr tail)))
      (else `(seq ,head ,tail))))
 
-  (define (simplify-conditional t c a)
+  (define (literal-expr? x)
+    (memq (car x) '(bool char number null void)))
+
+  (define (literal-value x)
+    (let ((tag (car x)))
+      (cond
+       ((eq? tag 'bool) (cadr x))
+       ((eq? tag 'char) (cadr x))
+       ((eq? tag 'number) (cadr x))
+       ((eq? tag 'null) '())
+       ((eq? tag 'void) (when #f #f))
+       (else (error 'literal-value "unrecognized expression")))))
+
+  (define (boolean-expr? x)
+    (or (eq? (car x) 'lambda) (literal-expr? x)))
+  (define (boolean-value x)
+    (not (and (eq? (car x) 'bool) (eq? (cadr x) #f))))
+
+  (define (simplify-if t c a)
     (or
      (and
-      (eq? (car t) 'bool)
+      (boolean-expr? t)
       ;; (if #t C A) -> C; (if #f C A) -> A
-      (if (cadr t) c a))
+      (if (boolean-value t) c a))
 
      (and
       ;; (if (if TT TC TA) C A)
@@ -736,17 +772,18 @@
       (let ((tt (cadr t))
             (tc (caddr t))
             (ta (cadddr t)))
-        (and (eq? 'bool (car tc)) (eq? 'bool (car ta))
-             (cond
-              ((eq? (cadr tc) (cadr ta))
-               ;; (if (if TT b b) C A) -> (seq TT ,(if b C A))
-               (simplify-seq (simplify-drop tt) (if (cadr tc) c a)))
-              ((cadr tc)
-               ;; (if (if TT #t #f) C A) -> (if TT C A)
-               (simplify-conditional tt c a))
-              (else
-               ;; (if (if TT #f #t) C A) -> (if TT A C)
-               (simplify-conditional tt a c))))))
+        (and (boolean-expr? tc) (boolean-expr? ta)
+             (let ((tc (boolean-value tc)) (ta (boolean-value ta)))
+               (cond
+                ((eq? tc ta)
+                 ;; (if (if TT b b) C A) -> (seq TT ,(if b C A))
+                 (simplify-seq (simplify-drop tt) (if tc c a)))
+                (tc
+                 ;; (if (if TT #t #f) C A) -> (if TT C A)
+                 (simplify-if tt c a))
+                (else
+                 ;; (if (if TT #f #t) C A) -> (if TT A C)
+                 (simplify-if tt a c)))))))
 
      (and
       ;; (if (icall eq? X Y) C A)
@@ -754,26 +791,27 @@
       (eq? (cadr t) 'eq?)
       (let ((x (caddr t)) (y (cadddr t)))
         (or
-         (and (literal? x) (literal? y)
+         (and (literal-expr? x) (literal-expr? y)
               ;; Fold eq? between literals.
-              (if (eq? (cadr x) (cadr y)) c a))
+              (if (eq? (literal-value x) (literal-value y)) c a))
          ;; Simplify (if (eq? X #f) #f #t) result from beta-reduction.
          (and (eq? (car x) 'if)
-              (eq? (car y) 'bool) (not (cadr y))
+              (boolean-expr? y) (not (boolean-value y))
               (let ((tft (cadr x))
                     (tfc (caddr x))
                     (tfa (cadddr x)))
-                (and (eq? 'bool (car tfc)) (eq? 'bool (car tfa))
-                     (cond
-                      ((eq? (cadr tfc) (cadr tfa))
-                       ;; (if (icall eq? (if TFT b b) #f) C A) -> (seq TFT ,(if b A C))
-                       (simplify-seq (simplify-drop tft) (if (cadr tfc) a c)))
-                      ((cadr tfc)
-                       ;; (if (icall eq? (if TFT #t #f) #f) C A) -> (if TFT A C)
-                       (simplify-conditional tft a c))
-                      (else
-                       ;; (if (icall eq? (if TFT #f #t) #f) C A) -> (if TFT C A)
-                       (simplify-conditional tft c a)))))))))
+                (and (boolean-expr? tfc) (boolean-expr? tfa)
+                     (let ((tfc (boolean-value tfc)) (tfa (boolean-value tfa)))
+                       (cond
+                        ((eq? tfc tfa)
+                         ;; (if (icall eq? (if TFT b b) #f) C A) -> (seq TFT ,(if b A C))
+                         (simplify-seq (simplify-drop tft) (if tfc a c)))
+                        (tfc
+                         ;; (if (icall eq? (if TFT #t #f) #f) C A) -> (if TFT A C)
+                         (simplify-if tft a c))
+                        (else
+                         ;; (if (icall eq? (if TFT #f #t) #f) C A) -> (if TFT C A)
+                         (simplify-if tft c a))))))))))
 
      ;; Fallback.
      `(if ,t ,c ,a)))
@@ -808,6 +846,21 @@
            (else
             `(drop ,expr))))))
 
+  (define (inline-call-arg var value arg)
+    (cond
+     ((eq? (car arg) 'var)
+      (and (eq? (cadr arg) var)
+           value))
+     ((and (or (eq? (car arg) 'call)
+               (eq? (car arg) 'icall))
+           (pair? (cddr arg))
+           (null? (cdddr arg)))
+      ;; Try to inline through unary calls, to punch through type
+      ;; conversions.
+      (let ((x (inline-call-arg var value (caddr arg))))
+        (and x
+             `(,(car arg) ,(cadr arg) ,x))))
+     (else #f)))
   (define (inline-call-args vars values args)
     (cond
      ((null? args) '())
@@ -815,43 +868,82 @@
      (else
       (let ((tail (inline-call-args (cdr vars) (cdr values) (cdr args))))
         (and tail
-             (eq? (caar args) 'var)
-             (eq? (cadar args) (car vars))
-             (cons (car values) tail))))))
-  (define (inline-let vars values body)
-    (and (memq (car body) '(call icall))
-         (let ((inlined (inline-call-args vars values (cddr body))))
-           (and inlined
-                `(,(car body) ,(cadr body) . ,inlined)))))
+             (let ((head (inline-call-arg (car vars) (car values) (car args))))
+               (and head
+                    (cons head tail))))))))
 
   (define (reify-let vars values body)
     `(let ,(make-let-bindings vars values) ,body))
 
-  (define (beta-reduce vars values body)
+  (define (simplify-let vars values body)
     ;; Many beta reductions just remove the eta-expanded top-levels
     ;; introduced in the parse phase.  In that case, the "let" is
     ;; unnecessary.  Here we have little hack to inline the "let" in
     ;; those cases..
-    (if (null? vars)
-        body
-        (if (and (eq? (car body) 'if)
-                 (literal? (caddr body))
-                 (literal? (cadddr body)))
-            `(if ,(beta-reduce vars values (cadr body))
-                 ,(caddr body)
-                 ,(cadddr body))
-            (or (inline-let vars values body)
-                (reify-let vars values body)))))
+    (let ((tag (car body)))
+      (cond
+       ((null? vars) body)
+       ((eq? tag 'var)
+        (if (eq? (cadr body) (car vars))
+            (simplify-seq (simplify-drop
+                           (simplify-let (cdr vars) (cdr values)
+                                         '(void)))
+                          (car values))
+            (simplify-seq (simplify-drop (car values))
+                          (simplify-let (cdr vars) (cdr values) body))))
+       ((literal-expr? body)
+        (simplify-seq (simplify-drop (car values))
+                      (simplify-let (cdr vars) (cdr values) body)))
+       ((eq? tag 'seq)
+        (if (literal-expr? (caddr body))
+            `(seq ,(simplify-let vars values (cadr body))
+                  ,(caddr body))
+            (reify-let vars values body)))
+       ((and (eq? tag 'if)
+             (literal-expr? (caddr body))
+             (literal-expr? (cadddr body)))
+        (simplify-if (simplify-let vars values (cadr body))
+                     (caddr body)
+                     (cadddr body)))
+       ((or (eq? tag 'call) (eq? tag 'icall))
+        (let ((callee (cadr body))
+              (args (cddr body)))
+          (cond
+           ((null? args)
+            (simplify-seq (simplify-drop (car values))
+                          (simplify-let (cdr vars) (cdr values) body)))
+           ((null? (cdr args))
+            `(,tag ,callee ,(simplify-let vars values (car args))))
+           (else
+            (let ((args* (inline-call-args vars values args)))
+              (if args*
+                  `(,tag ,callee . ,args*)
+                  (reify-let vars values body)))))))
+       (else
+        (reify-let vars values body)))))
+
+  (define (simplify-call callee args)
+    `(call ,callee . ,args))
+
+  (define (simplify-icall op args)
+    `(icall ,op . ,args))
+
+  (define (simplify-apply-procedure target args)
+    (if (and (eq? 'lambda (car target))
+             (eq? (length (cadr target)) (length args)))
+        ;; ((lambda (x ...) body) arg ...) -> (let ((x arg) ...) body)
+        (simplify-let (cadr target) args (caddr target))
+        `(apply-procedure ,target . ,args)))
 
   (define (simplify-expr expr)
     (let ((tag (car expr)))
       (cond
+       ((or (literal-expr? expr) (eq? tag 'var)) expr)
        ((eq? tag 'let)
         (let* ((vars (map car (cadr expr)))
                (vals (map simplify-expr (map cadr (cadr expr))))
-               (bindings (make-let-bindings vars vals))
                (body (simplify-expr (caddr expr))))
-          `(let ,bindings ,body)))
+          (simplify-let vars vals body)))
        ((eq? tag 'drop)
         (simplify-drop (simplify-expr (cadr expr))))
        ((eq? tag 'seq)
@@ -860,19 +952,14 @@
         (let ((t (simplify-expr (cadr expr)))
               (c (simplify-expr (caddr expr)))
               (a (simplify-expr (cadddr expr))))
-          (simplify-conditional t c a)))
-       ((or (eq? tag 'call) (eq? tag 'icall))
-        `(,tag ,(cadr expr) . ,(map simplify-expr (cddr expr))))
+          (simplify-if t c a)))
+       ((eq? tag 'call)
+        (simplify-call (cadr expr) (map simplify-expr (cddr expr))))
+       ((eq? tag 'icall)
+        (simplify-icall (cadr expr) (map simplify-expr (cddr expr))))
        ((eq? tag 'apply-procedure)
-        (let ((target (simplify-expr (cadr expr)))
-              (args (map simplify-expr (cddr expr))))
-          (if (and (eq? 'lambda (car target))
-                   (eq? (length (cadr target)) (length args)))
-              ;; ((lambda (x ...) body) arg ...) -> (let ((x arg) ...) body)
-              (beta-reduce (cadr target) args (caddr target))
-              `(apply-procedure ,target . ,args))))
-       ((or (eq? tag 'var) (literal? expr))
-        expr)
+        (simplify-apply-procedure (simplify-expr (cadr expr))
+                                  (map simplify-expr (cddr expr))))
        ((eq? tag 'lambda)
         `(lambda ,(cadr expr) ,(simplify-expr (caddr expr))))
        (else
@@ -930,7 +1017,7 @@
         `(,tag ,(cadr expr) . ,(annotate-free-vars-expr* (cddr expr) bodies)))
        ((eq? tag 'apply-procedure)
         `(apply-procedure . ,(annotate-free-vars-expr* (cdr expr) bodies)))
-       ((or (eq? tag 'var) (eq? tag 'nop) (literal? expr))
+       ((or (eq? tag 'var) (eq? tag 'nop) (literal-expr? expr))
         expr)
        ((eq? tag 'lambda)
         ;; (lambda args body) -> (make-closure args (free-vars x*) body-tag)
@@ -969,7 +1056,7 @@
     (let ((tag (car expr)))
       (cond
        ((eq? tag 'var) (cdr expr))
-       ((or (literal? expr) (eq? tag 'nop)) '())
+       ((or (literal-expr? expr) (eq? tag 'nop)) '())
        ((eq? tag 'drop) (find-free-vars (cadr expr)))
        ((eq? tag 'seq) (find-free-vars-expr* (cdr expr)))
        ((eq? tag 'lambda)
