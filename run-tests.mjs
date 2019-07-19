@@ -1,6 +1,6 @@
 // -*- javascript -*-
 //
-// Copyright 2018 Google LLC
+// Copyright 2018, 2019 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -28,10 +28,12 @@ import util from 'util';
 
 import * as addNumsTest from './test/add-nums-arg.mjs';
 import * as eqFalseTest from './test/eq-false-arg.mjs';
+import * as evalTest from './test/eval.mjs';
 
 const testModules = {
     'test/add-nums-arg.ss': addNumsTest,
-    'test/eq-false-arg.ss': eqFalseTest
+    'test/eq-false-arg.ss': eqFalseTest,
+    'test/eval.ss': evalTest
 };
 
 Error.stackTraceLimit = 20;

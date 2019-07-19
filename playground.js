@@ -38,12 +38,7 @@ async function compileAndRun() {
   const { schism, engine } = await compiler;
   const compile = schism.exports['compile-stdin->stdout'];
 
-  let new_src = [];
-  for (let c of src) {
-    new_src.push(c.charCodeAt(0));
-  }
-
-  engine.setCurrentInputPort(new_src);
+  engine.setCurrentInputPortChars(src);
   engine.output_data.length = 0;
   compile();
 
