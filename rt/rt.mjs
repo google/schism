@@ -169,6 +169,14 @@ export class Engine {
         this.input_index = 0;
     }
 
+    setCurrentInputPortChars(chars) {
+        const data = []
+        for (let c of chars) {
+            data.push(c.charCodeAt(0));
+        }
+        this.setCurrentInputPort(data);
+    }
+
     clearOutputBuffer() {
         this.output_data.length = 0;
     }
