@@ -301,7 +301,6 @@
       (write-char        . ,(wrap/1 write-char))
       (zero?             . ,(wrap/1 zero?))))
 
-  (define (empty-env) '())
   (define (eval expr)
     (let ((env (default-environment)))
       (%eval (expand expr (map car env)) (map cdr env))))
