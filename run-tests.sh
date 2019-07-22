@@ -14,4 +14,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-node --experimental-modules run-tests.mjs "$@"
+${NODE-node} --experimental-modules --experimental-wasm-anyref run-tests.mjs "$@"

@@ -48,7 +48,10 @@
            (display (car x))
            (%display-pair-tail (cdr x)))
           ((null? x) (%log-char #\() (%log-char #\)))
-          ((symbol? x) (%display-symbol x))
+          ((symbol? x)
+           (if (%gensym? x)
+               (%display-gensym x)
+               (%display-symbol x)))
           ((boolean? x) (%log-char #\#) (%log-char (if x #\t #\f)))
           ((number? x)
            (%display-leading-digits (div0 x 10))
@@ -76,49 +79,43 @@
        (define (%display-raw-string s)
          (unless (string? s)
            (error '%display-raw-string "not a string"))
-         (%display-chars-as-string (string->list s)))
+         (%display-chars-as-string (%string->list s)))
        (define (%display-chars-as-string chars)
          (unless (null? chars)
            (unless (pair? chars)
              (error '%display-chars-as-string "not a list of chars"))
-           (%log-char (characterValue (car chars)))
+           (%log-char (%char-value (car chars)))
            (%display-chars-as-string (cdr chars))))
+       (define (%display-gensym sym)
+         (%log-char #\#) (%log-char #\<)
+         (%log-char #\g) (%log-char #\e) (%log-char #\n)
+         (%log-char #\s) (%log-char #\y) (%log-char #\m)
+         (%log-char #\space)
+         (%display-raw-string (%symbol->string sym))
+         (%log-char #\>))
        (define (%display-symbol sym)
-         (if (isInternedSymbol sym)
-             (symbolValue sym)
-             (begin
-               (%log-char #\#) (%log-char #\<)
-               (%log-char #\g) (%log-char #\e) (%log-char #\n)
-               (%log-char #\s) (%log-char #\y) (%log-char #\m)
-               (%log-char #\space)
-               (%display-raw-string (symbolValue sym))
-               (%log-char #\space)
-               ;; FIXME: Display address?
-               ;; (display (%as-fixnum sym))
-               (%log-char #\>))))
+         (%display-raw-string (%symbol->string sym)))
        (define (write x)
          (if (string? x)
              (%display-raw-string x)
              (display x)))
        (define (newline)
          (%flush-log))
-       (define (cons a d)
-         (newPair a d))
        (define (set-car! p a)
          (if (pair? p)
-             (setCar p a)
+             (%set-car! p a)
              (error 'set-car! "set-car!: not a pair")))
        (define (set-cdr! p d)
          (if (pair? p)
-             (setCdr p d)
+             (%set-cdr! p d)
              (error 'set-cdr! "set-cdr!: not a pair")))
        (define (car p)
          (if (pair? p)
-             (getCar p)
+             (%car p)
              (error 'car "car: not a pair")))
        (define (cdr p)
          (if (pair? p)
-             (getCdr p)
+             (%cdr p)
              (error 'cdr "cdr: not a pair")))
        (define (caar p) (car (car p)))
        (define (cadr p) (car (cdr p)))
@@ -160,11 +157,11 @@
          (if (null? a) b (cons (car a) (append (cdr a) b))))
        (define (char->integer c)
          (if (char? c)
-             (characterValue c)
+             (%char-value c)
              (error 'char->integer "not a char")))
        (define (integer->char c)
-         (if (isSmallInteger c)
-             (getCharacter c)
+         (if (number? c)
+             (%make-char c)
              (error 'char->integer "not a char")))
        (define (char-between c c1 c2) ;; inclusive
          (if (char-ci<? c c1)
@@ -183,29 +180,30 @@
        (define (list->string ls)
          (unless (pair? ls) (error 'list->string "list->string: not a pair"))
          ;; For now we represent strings as lists of characters.
-         (newString ls))
+         (%list->string ls))
        (define (string->list s)
          (unless (string? s)
            ;; Calling error here can lead to an infinite loop, so we
            ;; generate an unreachable instead.
            (%unreachable))
-         (stringChars s))
+         (%string->list s))
        (define (string-equal? s1 s2)
          (list-all-eq? (string->list s1) (string->list s2)))
        (define (string->symbol s)
          (if (string? s)
-             (getSymbol s)
+             (%string->symbol s)
              ;; calling error here can lead to an infinite loop, so we
              ;; generate an unreachable instead.
              (%unreachable)))
        (define (gensym t) ;; Creates a brand new symbol that cannot be reused
-         (newSymbol t))
+         (unless (string? t) (error 'gensym "not a string"))
+         (%make-gensym t))
        (define (symbol->string x)
          (unless (symbol? x) (error 'symbol->string "not a symbol"))
-         (symbolValue x))
+         (%symbol->string x))
        (define (string->symbol str)
          (unless (string? str) (error 'string->symbol "not a string"))
-         (getSymbol str))
+         (%string->symbol str))
        (define (list-all-eq? a b)
          (if (null? a)
              (null? b)
@@ -216,8 +214,6 @@
          (< b a))
        (define (max a b)
          (if (< a b) b a))
-       (define (eof-object)
-         (getEOF))
        (define (peek-char)
          (let ((i (%peek-char)))
            (if (< i 0)
@@ -340,20 +336,10 @@
          (eq? n 0))
        (define (null? x)
          (eq? x '()))
-       (define (pair? p)
-         (isPair p))
        (define (boolean? p)
          (or (eq? p #t) (eq? p #f)))
-       (define (number? p)
-         (isSmallInteger p))
-       (define (char? p)
-         (isCharacter p))
-       (define (string? p)
-         (isString p))
        (define (symbol? p)
-         (isSymbol p))
-       (define (procedure? p)
-         (isClosure p))
+         (or (%symbol? p) (%gensym? p)))
        (define (map p ls)
          (if (null? ls)
              '()
@@ -375,49 +361,54 @@
      (else (memq x (cdr ls)))))
 
   (define (runtime-imports)
-    '((i32 %read-char)
+    '((bool eq? (scm x) (scm y))
+
+      (bool number? (scm x))
+      (bool char? (scm x))
+
+      (scm %make-number (i32 x))
+      (scm %make-char (i32 x))
+
+      (i32 %number-value (scm x))
+      (i32 %char-value (scm x))
+
+      (bool string? (scm x))
+      (bool %symbol? (scm x))
+
+      (scm %list->string (scm x))
+      (scm %string->list (scm x))
+
+      (scm %string->symbol (scm x))
+      (scm %symbol->string (scm x))
+
+      (scm %make-gensym (scm x))
+      (bool %gensym? (scm x))
+
+      (scm cons (scm x) (scm y))
+      (bool pair? (scm x))
+      (scm %car (scm x))
+      (scm %cdr (scm x))
+      (void %set-car! (scm x) (scm y))
+      (void %set-cdr! (scm x) (scm y))
+
+      (scm %get-false)
+      (scm %get-true)
+      (scm %get-null)
+      (scm eof-object)
+      (scm %get-void)
+
+      (scm %make-closure (i32 index) (i32 nfields))
+      (bool procedure? (scm x))
+      (i32 %closure-index (scm x))
+      (void %set-closure-free-var! (scm x) (i32 i) (scm y))
+      (scm %closure-free-var (scm x) (i32 i))
+
+      (i32 %read-char)
       (i32 %peek-char)
       (void %write-char (i32 c))
       (void error (scm where) (scm what))
       (void %log-char (i32 c))
-      (void %flush-log)
-
-      (scm getSmallInteger (i32 value))
-      (bool isSmallInteger (scm x))
-      (i32 smallIntegerValue (scm x))
-
-      (scm newPair (scm car) (scm cdr))
-      (bool isPair (scm x))
-      (scm getCar (scm x))
-      (scm getCdr (scm x))
-      (scm setCar (scm x) (scm y))
-      (scm setCdr (scm x) (scm y))
-
-      (scm getCharacter (i32 value))
-      (bool isCharacter (scm x))
-      (i32 characterValue (scm x))
-
-      (scm getFalse)
-      (scm getTrue)
-      (scm getNull)
-      (scm getEOF)
-      (scm getVoid)
-
-      (scm newString (scm chars))
-      (bool isString (scm x))
-      (scm stringChars (scm x))
-
-      (scm newSymbol (scm value))
-      (scm getSymbol (scm value))
-      (bool isSymbol (scm x))
-      (bool isInternedSymbol (scm x))
-      (scm symbolValue (scm x))
-
-      (scm newClosure (i32 index) (i32 nfields))
-      (scm isClosure (scm x))
-      (i32 closureIndex (scm x))
-      (void initClosureFreeVar (scm x) (i32 i) (scm y))
-      (scm getClosureFreeVar (scm x) (i32 i))))
+      (void %flush-log)))
 
   ;; TODO: The %-intrinsics should not be accessible to user code.
   (define (intrinsics)
@@ -432,7 +423,6 @@
       (i32 - (i32 x) (i32 y))
       (i32 div0 (i32 x) (i32 y))
       (i32 mod0 (i32 x) (i32 y))
-      (bool eq? (scm x) (scm y))
       (bool < (i32 x) (i32 y))))
 
   ;; ====================== ;;
@@ -511,10 +501,10 @@
   (define (adapt-type from to expr)
     (cond
      ((eq? from to) expr)
-     ((eq? from 'void) `(seq ,expr (call getVoid)))
-     ((and (eq? from 'scm) (eq? to 'i32)) `(call smallIntegerValue ,expr))
-     ((and (eq? from 'i32) (eq? to 'scm)) `(call getSmallInteger ,expr))
-     ((and (eq? from 'bool) (eq? to 'scm)) `(if ,expr (call getTrue) (call getFalse)))
+     ((eq? from 'void) `(seq ,expr (call %get-void)))
+     ((and (eq? from 'scm) (eq? to 'i32)) `(call %number-value ,expr))
+     ((and (eq? from 'i32) (eq? to 'scm)) `(call %make-number ,expr))
+     ((and (eq? from 'bool) (eq? to 'scm)) `(if ,expr (call %get-true) (call %get-false)))
      (else
       (trace-and-error (cons from to) 'adapt-type "unhandled case"))))
   (define (add-top-level env def)
@@ -533,7 +523,7 @@
           (arg-types (map car (cddr prim)))
           (arg-names (map cadr (cddr prim))))
       (cond
-       ((memq name '(getSmallInteger smallIntegerValue))
+       ((memq name '(%make-number %number-value))
         ;; All other primitives can be adapted to take and receive
         ;; Scheme values, but the whole point of this one is to convert
         ;; between Scheme numbers and i32 -- so we need to avoid adding
@@ -583,12 +573,12 @@
 
   (define (parse-expr expr env)
     (cond
-     ((null? expr) '(call getNull))
-     ((number? expr) `(call getSmallInteger (i32 ,expr)))
-     ((boolean? expr) (if expr '(call getTrue) '(call getFalse)))
-     ((char? expr) `(call getCharacter (i32 ,(char->integer expr))))
+     ((null? expr) '(call %get-null))
+     ((number? expr) `(call %make-number (i32 ,expr)))
+     ((boolean? expr) (if expr '(call %get-true) '(call %get-false)))
+     ((char? expr) `(call %make-char (i32 ,(char->integer expr))))
      ((string? expr)
-      `(call list->string
+      `(call %list->string
              ,(parse-expr (cons 'quote (cons (string->list expr) '())) env)))
      ((symbol? expr) (lookup expr env))
      ((pair? expr)
@@ -602,7 +592,7 @@
           (let ((t (cadr expr))
                 (c (caddr expr))
                 (a (cadddr expr)))
-            `(if (icall eq? ,(parse-expr t env) (call getFalse))
+            `(if (call eq? ,(parse-expr t env) (call %get-false))
                  ,(parse-expr a env)
                  ,(parse-expr c env))))
          ((eq? op 'let)
@@ -615,7 +605,7 @@
             `(let ,bindings ,body)))
          ((eq? op 'begin)
           (if (null? (cdr expr))
-              '(call getVoid)
+              '(call %get-void)
               (parse-begin (parse-expr (cadr expr) env) (cddr expr) env)))
          ((eq? op 'lambda)
           (let* ((args (cadr expr))
@@ -703,17 +693,21 @@
   (define (effect-free-callee? callee)
     ;; Imports known to be effect-free.
     (memq callee '(%peek-char
-                   getSmallInteger isSmallInteger smallIntegerValue
-                   newPair isPair getCar getCdr
-                   getCharacter isCharacter characterValue
-                   getFalse getTrue getNull getEOF getVoid
-                   newString isString stringChars
-                   getSymbol isSymbol symbolValue
-                   newClosure isClosure getClosureIndex getClosureFreeVar)))
+                   eq? number? char?
+                   %make-number %make-char
+                   %number-value %char-value
+                   string? %symbol?
+                   %list->string %string->list
+                   %string->symbol %symbol->string
+                   %make-gensym %gensym?
+                   cons pair? %car %cdr
+                   %get-false %get-true %get-null eof-object %get-void
+                   %make-closure procedure? %closure-index
+                   %closure-free-var)))
   (define (effect-free-intrinsic? op)
     (memq op '(bitwise-not bitwise-and bitwise-ior
                bitwise-arithmetic-shift-left bitwise-arithmetic-shift-right
-               + * - eq? <)))
+               + * - <)))
   (define (effect-free? expr)
     (let ((tag (car expr)))
       (or (eq? tag 'lambda)
@@ -736,26 +730,27 @@
 
   (define (literal-expr? x)
     (and (eq? (car x) 'call)
-         (or (memq (cadr x) '(getFalse getTrue getNull getEOF getVoid))
-             (and (memq (cadr x) '(getSmallInteger getCharacter))
+         (or (memq (cadr x)
+                   '(%get-false %get-true %get-null eof-object %get-void))
+             (and (memq (cadr x) '(%make-number %make-char))
                   (eq? (caaddr x) 'i32)))))
 
   (define (literal-value x)
     (let ((callee (cadr x)))
       (cond
-       ((eq? callee 'getSmallInteger) (cadr (caddr x)))
-       ((eq? callee 'getCharacter) (integer->char (cadr (caddr x))))
-       ((eq? callee 'getFalse) #f)
-       ((eq? callee 'getTrue) #t)
-       ((eq? callee 'getNull) '())
-       ((eq? callee 'getEOF) (eof-object))
-       ((eq? callee 'getVoid) (when #f #f))
+       ((eq? callee '%make-number) (cadr (caddr x)))
+       ((eq? callee '%make-char) (integer->char (cadr (caddr x))))
+       ((eq? callee '%get-false) #f)
+       ((eq? callee '%get-true) #t)
+       ((eq? callee '%get-null) '())
+       ((eq? callee 'eof-object) (eof-object))
+       ((eq? callee '%get-void) (when #f #f))
        (else (error 'literal-value "unrecognized-expression")))))
 
   (define (boolean-expr? x)
     (or (eq? (car x) 'lambda) (literal-expr? x)))
   (define (boolean-value x)
-    (not (and (eq? (car x) 'call) (eq? (cadr x) 'getFalse))))
+    (not (and (eq? (car x) 'call) (eq? (cadr x) '%get-false))))
 
   (define (simplify-if t c a)
     (or
@@ -784,8 +779,8 @@
                  (simplify-if tt a c)))))))
 
      (and
-      ;; (if (icall eq? X Y) C A)
-      (eq? (car t) 'icall)
+      ;; (if (call eq? X Y) C A)
+      (eq? (car t) 'call)
       (eq? (cadr t) 'eq?)
       (let ((x (caddr t)) (y (cadddr t)))
         (or
@@ -802,13 +797,13 @@
                      (let ((tfc (boolean-value tfc)) (tfa (boolean-value tfa)))
                        (cond
                         ((eq? tfc tfa)
-                         ;; (if (icall eq? (if TFT b b) #f) C A) -> (seq TFT ,(if b A C))
+                         ;; (if (call eq? (if TFT b b) #f) C A) -> (seq TFT ,(if b A C))
                          (simplify-seq (simplify-drop tft) (if tfc a c)))
                         (tfc
-                         ;; (if (icall eq? (if TFT #t #f) #f) C A) -> (if TFT A C)
+                         ;; (if (call eq? (if TFT #t #f) #f) C A) -> (if TFT A C)
                          (simplify-if tft a c))
                         (else
-                         ;; (if (icall eq? (if TFT #f #t) #f) C A) -> (if TFT C A)
+                         ;; (if (call eq? (if TFT #f #t) #f) C A) -> (if TFT C A)
                          (simplify-if tft c a))))))))))
 
      ;; Fallback.
@@ -885,7 +880,7 @@
         (if (eq? (cadr body) (car vars))
             (simplify-seq (simplify-drop
                            (simplify-let (cdr vars) (cdr values)
-                                         '(call getVoid)))
+                                         '(call %get-void)))
                           (car values))
             (simplify-seq (simplify-drop (car values))
                           (simplify-let (cdr vars) (cdr values) body))))
@@ -921,10 +916,10 @@
         (reify-let vars values body)))))
 
   (define (simplify-call callee args)
-    (let ((inverse (assq callee '((getSmallInteger . smallIntegerValue)
-                                  (smallIntegerValue . getSmallInteger)
-                                  (getCharacter . characterValue)
-                                  (characterValue . getCharacter)))))
+    (let ((inverse (assq callee '((%make-number . %number-value)
+                                  (%number-value . %make-number)
+                                  (%make-char . %char-value)
+                                  (%char-value . %make-char)))))
       (or (and inverse
                (let ((operand (car args)))
                  (and (eq? (car operand) 'call)
@@ -1035,7 +1030,7 @@
                (body (annotate-free-vars-expr (caddr expr) bodies)))
           (set-car! bodies (cons `(,body-tag ,args ,free-vars ,body) (car bodies)))
           (let ((closure-var (gensym "closure-var")))
-            `(let ((,closure-var (call newClosure (%function-index ,body-tag)
+            `(let ((,closure-var (call %make-closure (%function-index ,body-tag)
                                        (i32 ,(length free-vars)))))
                ,(generate-save-free-vars `(var ,closure-var)
                                          closure-var free-vars 0)))))
@@ -1044,7 +1039,7 @@
   (define (generate-save-free-vars tail closure free-vars index)
     (if (null? free-vars)
 	tail
-	`(seq ,(generate-save-free-vars `(call initClosureFreeVar
+	`(seq ,(generate-save-free-vars `(call %set-closure-free-var!
                                                (var ,closure) (i32 ,index)
                                                (var ,(car free-vars)))
                                         closure (cdr free-vars) (+ 1 index))
@@ -1115,7 +1110,8 @@
   (define (bind-free-vars closure free-vars index)
     (if (null? free-vars)
 	'()
-	(cons `(,(car free-vars) (call getClosureFreeVar (var ,closure) (i32 ,index)))
+	(cons `(,(car free-vars)
+                (call %closure-free-var (var ,closure) (i32 ,index)))
 	      (bind-free-vars closure (cdr free-vars) (+ 1 index)))))
 
   
@@ -1123,7 +1119,7 @@
   ;; Compile (make wasm)    ;;
   ;; ====================== ;;
   (define (args->types args)
-    (map (lambda (_) 'i32) args))
+    (map (lambda (_) 'anyref) args))
   (define (compile-icall op args env)
     (cond
      ((eq? op '%unreachable)
@@ -1161,9 +1157,6 @@
       (let ((num (compile-expr (car args) env))
             (shift-amount (compile-expr (cadr args) env)))
         `(i32.shr_s ,num ,shift-amount)))
-     ((eq? op 'eq?)
-      `(i32.eq ,(compile-expr (car args) env)
-               ,(compile-expr (cadr args) env)))
      ((eq? op '<)
       `(i32.lt_s ,(compile-expr (car args) env)
                  ,(compile-expr (cadr args) env)))
@@ -1189,9 +1182,9 @@
        ((eq? tag 'apply-procedure)
 	(let ((args (args->types (cdr expr))))
 	  `(call-indirect
-            (fn ,args (i32))
+            (fn ,args (anyref))
             . ,(append (compile-exprs (cdr expr) env)
-                       `((call closureIndex ,(compile-expr (cadr expr) env)))))))
+                       `((call %closure-index ,(compile-expr (cadr expr) env)))))))
        ((eq? tag 'icall)
         (compile-icall (cadr expr) (cddr expr) env))
        ((or (eq? tag 'if) (eq? tag 'if/void))
@@ -1283,11 +1276,11 @@
 		  #f)))))
 
   (define (import-arg-wasm-type type)
-    (cond ((eq? type 'scm) 'i32)
+    (cond ((eq? type 'scm) 'anyref)
           ((eq? type 'i32) 'i32)
           (else (trace-and-error type 'import-arg-wasm-type "unhandled"))))
   (define (import-return-wasm-type type)
-    (cond ((eq? type 'scm) '(i32))
+    (cond ((eq? type 'scm) '(anyref))
           ((eq? type 'i32) '(i32))
           ((eq? type 'void) '())
           ((eq? type 'bool) '(i32))
@@ -1297,9 +1290,9 @@
         (let ((ret (import-return-wasm-type (caddr fn)))
               (args (map import-arg-wasm-type (map car (cdr (cdddr fn))))))
           `(fn ,args ,ret))
-        ;; Scheme functions are assumed to always return an i32 and take
-        ;; some number of i32s as inputs.
-        `(fn ,(args->types (cdar fn)) (i32))))
+        ;; Scheme functions are assumed to always return an anyref and
+        ;; take some number of anyrefs as inputs.
+        `(fn ,(args->types (cdar fn)) (anyref))))
   (define (functions->types fns)
     (if (null? fns)
         '()
@@ -1345,7 +1338,7 @@
   (define (wasm-simple-op? op)
     (or (eq? op 'i32.and) (eq? op 'i32.add) (eq? op 'i32.sub) (eq? op 'i32.mul)
 	(eq? op 'i32.div_s) (eq? op 'i32.rem_s)
-        (eq? op 'i32.or) (eq? op 'i32.xor) (eq? op 'i32.eq)
+        (eq? op 'i32.or) (eq? op 'i32.xor)
         (eq? op 'i32.lt_s) (eq? op 'i32.shr_s) (eq? op 'i32.shl) (eq? op 'drop)
         (eq? op 'unreachable)))
 
@@ -1452,6 +1445,7 @@
      ((eq? type 'i64) '(#x7e))
      ((eq? type 'f32) '(#x7d))
      ((eq? type 'f64) '(#x7c))
+     ((eq? type 'anyref) '(#x6f))
      ((eq? type 'void) '(#x40))
      ;; functions are (fn (t1 ...) (t2 ...)), for t1 ... -> t2 ...
      ((and (pair? type) (eq? (car type) 'fn))
@@ -1468,16 +1462,10 @@
       (cons (encode-string module)
             (cons (encode-string name)
                   (cons '(#x00) (encode-uleb (caddr import)))))))
-  (define (encode-memory-import)
-    (cons (encode-string "memory")
-          (cons (encode-string "memory")
-                ;; Import a memory with at least 1 page and no maximum.
-                '(#x02 #x00 #x01))))
   (define (wasm-import-section imports)
     ;; Add 1 to the length because we import a memory too.
-    (make-section 2 (make-vec (+ (length imports) 1)
-                              (append (map encode-import imports)
-                                      (encode-memory-import)))))
+    (make-section 2 (make-vec (length imports)
+                              (map encode-import imports))))
 
   (define (encode-u32-vec nums)
     (make-vec (length nums) (map encode-uleb nums)))
@@ -1504,10 +1492,6 @@
         (cons (encode-expr (cadr expr)) (encode-expr (caddr expr))))
        ((eq? tag 'i32.const)
         (cons #x41 (encode-sleb (cadr expr))))
-       ((eq? tag 'i32.eqz)
-        (cons (encode-expr (cadr expr)) '(#x45)))
-       ((eq? tag 'i32.eq)
-        (encode-simple-op #x46 expr))
        ((eq? tag 'i32.lt_s)
         (encode-simple-op #x48 expr))
        ((eq? tag 'get-local)
@@ -1521,7 +1505,7 @@
 	`(,(map encode-expr (cddr expr))
 	  (#x11 ,(encode-uleb (cadr expr)) #x00)))
        ((or (eq? tag 'if) (eq? tag 'if/void))
-        (let ((type (if (eq? tag 'if) 'i32 'void))
+        (let ((type (if (eq? tag 'if) 'anyref 'void))
               (t (cadr expr))
               (c (caddr expr))
               (a (cadddr expr)))
@@ -1576,7 +1560,8 @@
     (let ((contents (cons
                      (if (zero? locals)
                          (make-vec 0 '())
-                         (make-vec 1 (cons (encode-uleb locals) '(#x7f))))
+                         (make-vec 1 (cons (encode-uleb locals)
+                                           (encode-type 'anyref))))
                      (cons (encode-expr body)
                            '(#x0b)))))
       (make-vec (byte-count contents) contents)))
