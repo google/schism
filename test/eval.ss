@@ -99,6 +99,10 @@
         (cond
          ((eq? head 'quote)
           (make-const (cadr expr)))
+         ((eq? head 'begin)
+          (if (null? (cdr expr))
+              (make-const (when #f #f))
+              (expand-body (cdr expr) env)))
          ((eq? head 'if)
           (make-if (expand (cadr expr) env)
                    (expand (caddr expr) env)
