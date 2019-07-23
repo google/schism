@@ -169,7 +169,7 @@ function rt(engine) {
         '%peek-char': peek,
         '%write-char': byte => engine.output_data.push(byte),
         'error': function (where, what) {
-            throw new SchemeError(where, what);
+            throw new SchemeError(toJS(where), toJS(what));
         },
         '%log-char': byte => engine.log += String.fromCharCode(byte),
         '%flush-log': () => {
