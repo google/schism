@@ -427,20 +427,36 @@
   ;; ====================== ;;
   ;; Parsing                ;;
   ;; ====================== ;;
-  (define (expand-macros-quasiquote expr)
-    (cond
-     ((pair? expr)
-      (if (eq? (car expr) 'unquote)
-	  (cons (car expr) (map expand-macros (cdr expr)))
-	  (map (lambda (e) (expand-macros-quasiquote e)) expr)))
-     (else expr)))
+  (define (quasicons head tail)
+    (if (and (pair? tail) (eq? (car tail) 'quote)
+             (pair? (cdr tail)) (null? (cddr tail))
+             (pair? head) (eq? (car head) 'quote)
+             (pair? (cdr head)) (null? (cddr head)))
+        `'(,(cadr head) . ,(cadr tail))
+        `(cons ,head ,tail)))
+  (define (expand-quasiquote expr level)
+    (if (pair? expr)
+        (let ((head (car expr))
+              (tail (cdr expr)))
+          (cond
+           ((and (eq? head 'unquote) (pair? tail) (null? (cdr tail)))
+            (if (zero? level)
+                (expand-macros (car tail))
+                (quasicons ''unquote (expand-quasiquote tail (- level 1)))))
+           ((and (eq? head 'quasiquote) (pair? tail) (null? (cdr tail)))
+            (quasicons ''quasiquote
+                       (expand-quasiquote tail (+ level 1))))
+           (else
+            (quasicons (expand-quasiquote head level)
+                       (expand-quasiquote tail level)))))
+        `',expr))
     
   (define (expand-macros expr)
     (if (pair? expr)
         (let ((tag (car expr)))
           (cond
            ((eq? tag 'quote) expr)
-	   ((eq? tag 'quasiquote) (map (lambda (e) (expand-macros-quasiquote e)) expr))
+	   ((eq? tag 'quasiquote) (expand-quasiquote (cadr expr) 0))
            ((eq? tag 'when)
             (expand-macros `(if ,(cadr expr) (begin . ,(cddr expr)) (begin))))
            ((eq? tag 'unless)
@@ -584,9 +600,7 @@
       (let ((op (car expr)))
         (cond
          ((eq? op 'quote)
-          (parse-expr (expand-quote (cadr expr) #f) env))
-         ((eq? op 'quasiquote)
-          (parse-expr (expand-quote (cadr expr) #t) env))
+          (parse-expr (expand-quote (cadr expr)) env))
          ((eq? op 'if)
           (let ((t (cadr expr))
                 (c (caddr expr))
@@ -664,7 +678,7 @@
                     (append (parse-functions primitives primitives-env)
                             (parse-functions defs body-env))))))
 
-  (define (expand-quote expr quasi)
+  (define (expand-quote expr)
     (cond
      ;; Literals self-evaluate
      ((or (number? expr) (boolean? expr) (char? expr) (string? expr) (null? expr))
@@ -672,9 +686,7 @@
      ((symbol? expr)
       `(string->symbol ,(symbol->string expr)))
      ((pair? expr)
-      (if (and quasi (eq? (car expr) 'unquote) (pair? (cdr expr)))
-          (cadr expr)
-          `(cons ,(expand-quote (car expr) quasi) ,(expand-quote (cdr expr) quasi))))
+      `(cons ,(expand-quote (car expr)) ,(expand-quote (cdr expr))))
      (else
       (trace-and-error expr 'expand-quote "invalid datum"))))
 
