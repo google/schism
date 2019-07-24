@@ -1,6 +1,6 @@
 // -*- javascript -*-
 //
-// Copyright 2018 Google LLC
+// Copyright 2018, 2019 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -51,8 +51,7 @@ function make_compiler(compiler_bytes) {
     const engine = new Schism.Engine;
     const schism = await engine.loadWasmModule(await compiler_bytes());
     engine.setCurrentInputPort(bytes);
-    let module_package = schism.exports['compile-stdin->module-package']();
-    schism.exports['compile-module-package->stdout'](module_package);
+    schism.exports['compile-stdin->stdout']();
     return new Uint8Array(engine.output_data);
   }
 }
