@@ -29,13 +29,12 @@
   #:use-module (schism compiler))
 
 (define* (main #:optional (out "schism-stage0.wasm") (in "schism/compiler.ss"))
-  (let ((package (with-input-from-file in compile-stdin->module-package)))
-    (with-output-to-file out
-      (lambda ()
-        ;; Schism uses write-char to write bytes, so install the
-        ;; encoding that ensures that writing (integer->char C) writes
-        ;; the byte C, for C < 256.
-        (set-port-encoding! (current-output-port) "ISO-8859-1")
-        (compile-module-package->stdout package)))))
+  (with-output-to-file out
+    (lambda ()
+      ;; Schism uses write-char to write bytes, so install the
+      ;; encoding that ensures that writing (integer->char C) writes
+      ;; the byte C, for C < 256.
+      (set-port-encoding! (current-output-port) "ISO-8859-1")
+      (with-input-from-file in compile-stdin->stdout))))
 
 (apply main (cdr (program-arguments)))

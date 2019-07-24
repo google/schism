@@ -13,8 +13,7 @@
 ;; limitations under the License.
 
 (library (schism compiler)
-  (export compile-library compile-stdin->stdout
-          compile-stdin->module-package compile-module-package->stdout)
+  (export compile-library compile-stdin->stdout)
   (import (rnrs)
 	  (rnrs mutable-pairs)
           (only (chezscheme) gensym))
@@ -1599,8 +1598,6 @@
   ;; Takes a library and returns a list of the corresponding Wasm module
   ;; bytes
   (define (compile-library library)
-    (generate-module-from-package (compile-library->module-package library)))
-  (define (compile-library->module-package library)
     ;; (parsed-lib : (exports . functions)
     (let ((parsed-lib (parse-library (expand-macros library))))
       (let ((exports (car parsed-lib)))
@@ -1609,19 +1606,12 @@
                (function-names (map function->name closure-converted))
                (types (functions->types closure-converted))
 	       (type-ids (functions->type-ids closure-converted types))
-               (compiled-module (compile-functions closure-converted)))
-          (let ((exports (build-exports exports closure-converted 0))
-                (imports (gather-imports compiled-module types)))
-            `(,types ,exports ,imports ,compiled-module ,function-names ,type-ids))))))
-  (define (generate-module-from-package package)
-    (let ((types (car package))
-          (exports (cadr package))
-          (imports (caddr package))
-          (compiled-module (cadddr package))
-          (function-names (cadddr (cdr package)))
-	  (type-ids (cadddr (cddr package))))
-      (let ((functions (resolve-calls compiled-module function-names types)))
-	(generate-module types exports imports functions function-names type-ids))))
+               (compiled-module (compile-functions closure-converted))
+               (exports (build-exports exports closure-converted 0))
+               (imports (gather-imports compiled-module types))
+               (functions (resolve-calls compiled-module function-names types)))
+          (generate-module types exports imports functions function-names
+                           type-ids)))))
   (define (generate-module types exports imports functions function-names type-ids)
     (cons (wasm-header)
           (cons (cons (wasm-type-section types)
@@ -1641,9 +1631,5 @@
      (else
       (write-bytes (car ls))
       (write-bytes (cdr ls)))))
-  (define (compile-stdin->module-package)
-    (compile-library->module-package (read)))
-  (define (compile-module-package->stdout package)
-    (write-bytes (generate-module-from-package package)))
   (define (compile-stdin->stdout)
-    (compile-module-package->stdout (compile-library->module-package (read)))))
+    (write-bytes (compile-library (read)))))
