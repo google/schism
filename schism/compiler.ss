@@ -37,6 +37,8 @@
   (define (index-of x ls)
     (index-of-helper x ls 0))
 
+  (define (void) (when #f #f))
+
   (define (primitives)
     (expand-macros
      `(;; display, newline, etc are all just enough to compile. We'll fill them in later.
@@ -516,10 +518,10 @@
   (define (adapt-type from to expr)
     (cond
      ((eq? from to) expr)
-     ((eq? from 'void) `(seq ,expr (call %get-void)))
+     ((eq? from 'void) `(seq ,expr (const ,(void))))
      ((and (eq? from 'scm) (eq? to 'i32)) `(call %number-value ,expr))
      ((and (eq? from 'i32) (eq? to 'scm)) `(call %make-number ,expr))
-     ((and (eq? from 'bool) (eq? to 'scm)) `(if ,expr (call %get-true) (call %get-false)))
+     ((and (eq? from 'bool) (eq? to 'scm)) `(if ,expr (const #t) (const #f)))
      (else
       (trace-and-error (cons from to) 'adapt-type "unhandled case"))))
   (define (add-top-level env def)
@@ -588,24 +590,18 @@
 
   (define (parse-expr expr env)
     (cond
-     ((null? expr) '(call %get-null))
-     ((number? expr) `(call %make-number (i32 ,expr)))
-     ((boolean? expr) (if expr '(call %get-true) '(call %get-false)))
-     ((char? expr) `(call %make-char (i32 ,(char->integer expr))))
-     ((string? expr)
-      `(call %list->string
-             ,(parse-expr (cons 'quote (cons (string->list expr) '())) env)))
+     ((or (null? expr) (number? expr) (boolean? expr) (char? expr) (string? expr))
+      `(const ,expr))
      ((symbol? expr) (lookup expr env))
      ((pair? expr)
       (let ((op (car expr)))
         (cond
-         ((eq? op 'quote)
-          (parse-expr (expand-quote (cadr expr)) env))
+         ((eq? op 'quote) `(const ,(cadr expr)))
          ((eq? op 'if)
           (let ((t (cadr expr))
                 (c (caddr expr))
                 (a (cadddr expr)))
-            `(if (call eq? ,(parse-expr t env) (call %get-false))
+            `(if (call eq? ,(parse-expr t env) (const #f))
                  ,(parse-expr a env)
                  ,(parse-expr c env))))
          ((eq? op 'let)
@@ -618,7 +614,7 @@
             `(let ,bindings ,body)))
          ((eq? op 'begin)
           (if (null? (cdr expr))
-              '(call %get-void)
+              `(const ,(void))
               (parse-begin (parse-expr (cadr expr) env) (cddr expr) env)))
          ((eq? op 'lambda)
           (let* ((args (cadr expr))
@@ -723,6 +719,8 @@
     (let ((tag (car expr)))
       (or (eq? tag 'lambda)
           (eq? tag 'var)
+          (eq? tag 'const)
+          (eq? tag 'i32)
           (and (eq? tag 'call)
                (effect-free-callee? (cadr expr))
                (and-map effect-free? (cddr expr)))
@@ -740,35 +738,22 @@
      (else `(seq ,head ,tail))))
 
   (define (literal-expr? x)
-    (and (eq? (car x) 'call)
-         (or (memq (cadr x)
-                   '(%get-false %get-true %get-null eof-object %get-void))
-             (and (memq (cadr x) '(%make-number %make-char))
-                  (eq? (caaddr x) 'i32)))))
-
+    (eq? (car x) 'const))
   (define (literal-value x)
-    (let ((callee (cadr x)))
-      (cond
-       ((eq? callee '%make-number) (cadr (caddr x)))
-       ((eq? callee '%make-char) (integer->char (cadr (caddr x))))
-       ((eq? callee '%get-false) #f)
-       ((eq? callee '%get-true) #t)
-       ((eq? callee '%get-null) '())
-       ((eq? callee 'eof-object) (eof-object))
-       ((eq? callee '%get-void) (when #f #f))
-       (else (error 'literal-value "unrecognized-expression")))))
+    (cadr x))
 
   (define (boolean-expr? x)
     (or (eq? (car x) 'lambda) (literal-expr? x)))
   (define (boolean-value x)
-    (not (and (eq? (car x) 'call) (eq? (cadr x) '%get-false))))
+    (not (and (eq? (car x) 'const) (eq? (cadr x) #f))))
 
   (define (simplify-if t c a)
     (or
      (and
-      (boolean-expr? t)
-      ;; (if #t C A) -> C; (if #f C A) -> A
-      (if (boolean-value t) c a))
+      (eq? (car t) 'i32)
+      ;; (if (i32 0) C A) -> A; C otherwise.  Note that the continuation
+      ;; of the test is of type i32.
+      (if (zero? (cadr t)) a c))
 
      (and
       ;; (if (if TT TC TA) C A)
@@ -891,11 +876,11 @@
         (if (eq? (cadr body) (car vars))
             (simplify-seq (simplify-drop
                            (simplify-let (cdr vars) (cdr values)
-                                         '(call %get-void)))
+                                         `(const ,(void))))
                           (car values))
             (simplify-seq (simplify-drop (car values))
                           (simplify-let (cdr vars) (cdr values) body))))
-       ((eq? tag 'i32)
+       ((or (eq? tag 'i32) (eq? tag 'const))
         (simplify-seq (simplify-drop (car values))
                       (simplify-let (cdr vars) (cdr values) body)))
        ((eq? tag 'seq)
@@ -926,17 +911,42 @@
        (else
         (reify-let vars values body)))))
 
+  (define (constant-arg? expr)
+    (memq (car expr) '(i32 const)))
+
+  (define (fold-constants/call callee args)
+    ;; Note, we know that the arity of the call is correct, and that
+    ;; argument types match what the callee expects, so we can directly
+    ;; reach in and pluck out i32/const values.
+    (cond
+     ((eq? callee '%make-number)
+      `(const ,(cadr (car args))))
+     ((eq? callee '%number-value)
+      `(i32 ,(cadr (car args))))
+     ((eq? callee '%make-char)
+      `(const ,(integer->char (cadr (car args)))))
+     ((eq? callee '%char-value)
+      `(i32 ,(char->integer (cadr (car args)))))
+     ((eq? callee 'eq?)
+      `(i32 ,(if (eq? (cadr (car args)) (cadr (cadr args))) 1 0)))
+     (else
+      ;; Add more cases here.
+      #f)))
+
   (define (simplify-call callee args)
-    (let ((inverse (assq callee '((%make-number . %number-value)
-                                  (%number-value . %make-number)
-                                  (%make-char . %char-value)
-                                  (%char-value . %make-char)))))
-      (or (and inverse
+    (or (and (effect-free-callee? callee)
+             (and-map constant-arg? args)
+             (fold-constants/call callee args))
+        (let ((inverse (assq callee '((%make-number . %number-value)
+                                      (%number-value . %make-number)
+                                      (%make-char . %char-value)
+                                      (%char-value . %make-char)))))
+          (and inverse
                (let ((operand (car args)))
                  (and (eq? (car operand) 'call)
                       (eq? (cadr operand) (cdr inverse))
-                      (caddr operand))))
-          `(call ,callee . ,args))))
+                      (caddr operand)))))
+        `(call ,callee . ,args)))
 
   (define (simplify-icall op args)
     `(icall ,op . ,args))
@@ -951,7 +961,7 @@
   (define (simplify-expr expr)
     (let ((tag (car expr)))
       (cond
-       ((eq? tag 'i32) expr)
+       ((or (eq? tag 'i32) (eq? tag 'const)) expr)
        ((eq? tag 'var) expr)
        ((eq? tag 'let)
         (let* ((vars (map car (cadr expr)))
@@ -1031,7 +1041,7 @@
         `(,tag ,(cadr expr) . ,(annotate-free-vars-expr* (cddr expr) bodies)))
        ((eq? tag 'apply-procedure)
         `(apply-procedure . ,(annotate-free-vars-expr* (cdr expr) bodies)))
-       ((or (eq? tag 'var) (eq? tag 'nop) (eq? tag 'i32))
+       ((or (eq? tag 'var) (eq? tag 'nop) (eq? tag 'i32) (eq? tag 'const))
         expr)
        ((eq? tag 'lambda)
         ;; (lambda args body) -> (make-closure args (free-vars x*) body-tag)
@@ -1067,7 +1077,7 @@
     (let ((tag (car expr)))
       (cond
        ((eq? tag 'var) (cdr expr))
-       ((or (eq? tag 'nop) (eq? tag 'i32)) '())
+       ((or (eq? tag 'nop) (eq? tag 'i32) (eq? tag 'const)) '())
        ((eq? tag 'drop) (find-free-vars (cadr expr)))
        ((eq? tag 'seq) (find-free-vars-expr* (cdr expr)))
        ((eq? tag 'lambda)
@@ -1125,7 +1135,66 @@
                 (call %closure-free-var (var ,closure) (i32 ,index)))
 	      (bind-free-vars closure (cdr free-vars) (+ 1 index)))))
 
-  
+  (define (lower-literal x)
+    (cond
+     ((null? x)
+      `(call %get-null))
+     ((eq? x (void))
+      `(call %get-void))
+     ((number? x)
+      `(call %make-number (i32 ,x)))
+     ((boolean? x)
+      (if x `(call %get-true) `(call %get-false)))
+     ((char? x)
+      `(call %make-char (i32 ,(char->integer x))))
+     ((string? x)
+      `(call %list->string ,(lower-literal (string->list x))))
+     ((symbol? x)
+      `(call string->symbol ,(lower-literal (symbol->string x))))
+     ((pair? x)
+      `(call cons ,(lower-literal (car x)) ,(lower-literal (cdr x))))
+     (else
+      (trace-and-error x 'lower-literal "unexpected constant"))))
+
+  (define (lower-literals expr)
+    (let ((tag (car expr)))
+      (cond
+       ((eq? tag 'const)
+        (lower-literal (cadr expr)))
+       ((or (eq? tag 'var) (eq? tag 'nop) (eq? tag 'i32))
+        expr)
+       ((eq? tag 'let)
+        (let ((vars (map car (cadr expr)))
+              (vals (map lower-literals (map cadr (cadr expr))))
+              (body (lower-literals (caddr expr))))
+          (reify-let vars vals body)))
+       ((eq? tag 'drop)
+        `(drop ,(lower-literals (cadr expr))))
+       ((eq? tag 'seq)
+        `(seq ,(lower-literals (cadr expr))
+              ,(lower-literals (caddr expr))))
+       ((or (eq? tag 'if) (eq? tag 'if/void))
+        `(,tag ,(lower-literals (cadr expr))
+               ,(lower-literals (caddr expr))
+               ,(lower-literals (cadddr expr))))
+       ((or (eq? tag 'call) (eq? tag 'icall))
+        `(,tag ,(cadr expr) . ,(map lower-literals (cddr expr))))
+       ((eq? tag 'apply-procedure)
+        `(apply-procedure . ,(map lower-literals (cdr expr))))
+       ((eq? tag 'lambda)
+        `(lambda ,(cadr expr) ,(lower-literals (caddr expr))))
+       ((eq? tag '%function-index)
+        expr)
+       (else
+        (trace-and-error expr 'lower-literals "unexpected expr")))))
+
+  (define (lower-literals-in-function fn)
+    (if (eq? (car fn) '%wasm-import)
+        fn
+        (let ((def (car fn))
+              (body (cadr fn)))
+          `(,def ,(lower-literals body)))))
+
   ;; ====================== ;;
   ;; Compile (make wasm)    ;;
   ;; ====================== ;;
@@ -1597,15 +1666,11 @@
     (make-section 4 (make-vec 1
 			      `(#x70 #x00 . ,(encode-uleb num-items)))))
 
-  (define (encode-numbers numbers)
-    (if (null? numbers)
-	'()
-	(cons (encode-uleb (car numbers)) (encode-numbers (cdr numbers)))))
   (define (wasm-element-section element-ids)
     (make-section 9 (make-vec 1 `(0 ,(encode-expr `(i32.const 0))
 				    #x0b
 				    ,(make-vec (length element-ids)
-					       (encode-numbers element-ids))))))
+					       (map encode-uleb element-ids))))))
 
   ;; Takes a library and returns a list of the corresponding Wasm module
   ;; bytes
@@ -1613,13 +1678,14 @@
     ;; (parsed-lib : (exports . functions)
     (let ((parsed-lib (parse-library (expand-macros library))))
       (let ((exports (car parsed-lib)))
-        (let* ((simplified (simplify-functions (cdr parsed-lib)))
-               (closure-converted (convert-closures simplified))
-               (function-names (map function->name closure-converted))
-               (types (functions->types closure-converted))
-	       (type-ids (functions->type-ids closure-converted types))
-               (compiled-module (compile-functions closure-converted))
-               (exports (build-exports exports closure-converted 0))
+        (let* ((defs (simplify-functions (cdr parsed-lib)))
+               (defs (convert-closures defs))
+               (defs (map lower-literals-in-function defs))
+               (function-names (map function->name defs))
+               (types (functions->types defs))
+	       (type-ids (functions->type-ids defs types))
+               (compiled-module (compile-functions defs))
+               (exports (build-exports exports defs 0))
                (imports (gather-imports compiled-module types))
                (functions (resolve-calls compiled-module function-names types)))
           (generate-module types exports imports functions function-names
