@@ -18,4 +18,4 @@
   (import (rnrs))
 
   (define (do-test)
-    (string-equal? "abc" "abc")))
+    (string=? "abc" "abc")))

@@ -20,6 +20,7 @@
   ;; ====================== ;;
   ;; Helpers, etc.          ;;
   ;; ====================== ;;
+  (define (void) (when #f #f))
   (define (trace-value x)
     (write x)
     (newline)
@@ -27,17 +28,42 @@
   (define (trace-and-error x where what)
     (trace-value x)
     (error where what))
-
-  (define (index-of-helper x ls index)
-    (unless (pair? ls)
-      (trace-and-error x 'index-of "Could not find item"))
-    (if (eq? x (car ls))
-        index
-        (index-of-helper x (cdr ls) (+ 1 index))))
-  (define (index-of x ls)
-    (index-of-helper x ls 0))
-
-  (define (void) (when #f #f))
+  (define (index-of-helper x ls index same?)
+    (and (pair? ls)
+         (if (same? x (car ls))
+             index
+             (index-of-helper x (cdr ls) (+ 1 index) same?))))
+  (define (index-of x ls same?)
+    (index-of-helper x ls 0 same?))
+  (define (adjoin x set same?)
+    (if (index-of x set same?)
+        set
+        (cons x set)))
+  (define (remove-duplicates ls same?)
+    (fold-right (lambda (x ls) (adjoin x ls same?)) '() ls))
+  (define (filter pred ls)
+    (fold-right (lambda (x ls) (if (pred x) (cons x ls) ls)) '() ls))
+  (define (filter-out pred ls)
+    (filter (lambda (x) (not (pred x))) ls))
+  (define (and-map f ls)
+    (or (null? ls) (and (f (car ls)) (and-map f (cdr ls)))))
+  (define (or-map f ls)
+    (and (pair? ls) (or (f (car ls)) (or-map f (cdr ls)))))
+  (define (map2 f l1 l2)
+    (if (null? l1)
+        '()
+        (cons (f (car l1) (car l2)) (map2 f (cdr l1) (cdr l2)))))
+  (define (union a b)
+    (cond
+     ((null? a) b)
+     ((memq (car a) b) (union (cdr a) b))
+     (else (cons (car a) (union (cdr a) b)))))
+  (define (set-diff set sub)
+    (if (null? set)
+	'()
+	(if (memq (car set) sub)
+	    (set-diff (cdr set) sub)
+	    (cons (car set) (set-diff (cdr set) sub)))))
 
   (define (primitives)
     (expand-macros
@@ -188,7 +214,13 @@
            ;; generate an unreachable instead.
            (%unreachable))
          (%string->list s))
-       (define (string-equal? s1 s2)
+       (define (list-all-eq? a b)
+         (if (null? a)
+             (null? b)
+             (and (not (null? b))
+                  (eq? (car a) (car b))
+                  (list-all-eq? (cdr a) (cdr b)))))
+       (define (string=? s1 s2)
          (list-all-eq? (string->list s1) (string->list s2)))
        (define (string->symbol s)
          (if (string? s)
@@ -205,12 +237,6 @@
        (define (string->symbol str)
          (unless (string? str) (error 'string->symbol "not a string"))
          (%string->symbol str))
-       (define (list-all-eq? a b)
-         (if (null? a)
-             (null? b)
-             (and (not (null? b))
-                  (eq? (car a) (car b))
-                  (list-all-eq? (cdr a) (cdr b)))))
        (define (> a b)
          (< b a))
        (define (max a b)
@@ -581,10 +607,6 @@
         (trace-and-error name 'lookup "unbound identifier"))
       ((cdr pair))))
 
-  (define (map2 f l1 l2)
-    (if (null? l1)
-        '()
-        (cons (f (car l1) (car l2)) (map2 f (cdr l1) (cdr l2)))))
   (define (make-let-bindings vars values)
     (map2 (lambda (var value) `(,var ,value)) vars values))
 
@@ -695,8 +717,6 @@
   ;; intrinsics.  This pass simplifies away the introduced complexity
   ;; where it's not needed.
 
-  (define (and-map f ls)
-    (or (null? ls) (and (f (car ls)) (and-map f (cdr ls)))))
   (define (effect-free-callee? callee)
     ;; Imports known to be effect-free.
     (memq callee '(%peek-char
@@ -989,9 +1009,7 @@
        (else
         (trace-and-error expr 'simplify-expr "unrecognized expr")))))
   (define (simplify-function fn)
-    (if (eq? (car fn) '%wasm-import)
-        fn
-        `(,(car fn) ,(simplify-expr (cadr fn)))))
+    `(,(car fn) ,(simplify-expr (cadr fn))))
   (define (simplify-functions functions)
     (map simplify-function functions))
 
@@ -1015,11 +1033,9 @@
 
   (define (annotate-free-vars fn* bodies)
     (map (lambda (fn)
-           (if (eq? (car fn) '%wasm-import)
-               fn
-               (let ((def (car fn))
-                     (body (cadr fn)))
-                 `(,def ,(annotate-free-vars-expr body bodies)))))
+           (let ((def (car fn))
+                 (body (cadr fn)))
+             `(,def ,(annotate-free-vars-expr body bodies))))
          fn*))
   (define (annotate-free-vars-expr expr bodies)
     (let ((tag (car expr)))
@@ -1104,18 +1120,6 @@
 	       '()
 	       expr*))
   
-  (define (union a b)
-    (cond
-     ((null? a) b)
-     ((memq (car a) b) (union (cdr a) b))
-     (else (cons (car a) (union (cdr a) b)))))
-  (define (set-diff set sub)
-    (if (null? set)
-	'()
-	(if (memq (car set) sub)
-	    (set-diff (cdr set) sub)
-	    (cons (car set) (set-diff (cdr set) sub)))))
-
   (define (generate-closure-function body)
     ;; (tag args free-vars body) -> (tag . body)
     (let ((closure-var (gensym "closure")))
@@ -1135,65 +1139,116 @@
                 (call %closure-free-var (var ,closure) (i32 ,index)))
 	      (bind-free-vars closure (cdr free-vars) (+ 1 index)))))
 
-  (define (lower-literal x)
+  ;; cache := ((x . n) ...)
+  (define (find-interned-constant x cache)
     (cond
-     ((null? x)
-      `(call %get-null))
-     ((eq? x (void))
-      `(call %get-void))
-     ((number? x)
-      `(call %make-number (i32 ,x)))
-     ((boolean? x)
-      (if x `(call %get-true) `(call %get-false)))
-     ((char? x)
-      `(call %make-char (i32 ,(char->integer x))))
+     ((pair? x) #f)
      ((string? x)
-      `(call %list->string ,(lower-literal (string->list x))))
-     ((symbol? x)
-      `(call string->symbol ,(lower-literal (symbol->string x))))
-     ((pair? x)
-      `(call cons ,(lower-literal (car x)) ,(lower-literal (cdr x))))
+      (or-map (lambda (y)
+                (and (string? (car y))
+                     (string=? x (car y))
+                     (cdr y)))
+              cache))
      (else
-      (trace-and-error x 'lower-literal "unexpected constant"))))
+      (let ((entry (assq x cache)))
+        (and entry (cdr entry))))))
+  ;; env := (cache nglobals start)
+  (define (intern-constant x env)
+    (or
+     (find-interned-constant x (car env))
+     (let* ((init
+             (cond
+              ((null? x)      `(call %get-null))
+              ((eq? x (void)) `(call %get-void))
+              ((number? x)    `(call %make-number (i32 ,x)))
+              ((boolean? x)   (if x `(call %get-true) `(call %get-false)))
+              ((char? x)      `(call %make-char (i32 ,(char->integer x))))
+              ((string? x)
+               `(call %list->string
+                      (icall get-global
+                             (i32 ,(intern-constant (string->list x) env)))))
+              ((symbol? x)
+               `(call string->symbol
+                      (icall get-global
+                             (i32 ,(intern-constant (symbol->string x) env)))))
+              ((pair? x)
+               `(call cons
+                      (icall get-global
+                             (i32 ,(intern-constant (car x) env)))
+                      (icall get-global
+                             (i32 ,(intern-constant (cdr x) env)))))
+              (else
+               (trace-and-error x 'intern-constant "unexpected constant"))))
+            ;; Note -- recursive calls to `intern-constant` mutate
+            ;; `env`.  Destructure the environment here to avoid working
+            ;; on a stale state.
+            (cache (car env))
+            (n (cadr env))
+            (start (caddr env))
+            (init `(icall set-global (i32 ,n) ,init)))
+       (unless (pair? x)
+         ;; Avoid caching pairs for the time being.
+         (set-car! env (cons (cons x n) cache)))
+       (set-car! (cdr env) (+ n 1))
+       (set-car! (cddr env) (if start `(seq ,start ,init) init))
+       n)))
 
-  (define (lower-literals expr)
+  (define (lower-literals expr env)
     (let ((tag (car expr)))
       (cond
        ((eq? tag 'const)
-        (lower-literal (cadr expr)))
+        `(icall get-global (i32 ,(intern-constant (cadr expr) env))))
        ((or (eq? tag 'var) (eq? tag 'nop) (eq? tag 'i32))
         expr)
        ((eq? tag 'let)
         (let ((vars (map car (cadr expr)))
-              (vals (map lower-literals (map cadr (cadr expr))))
-              (body (lower-literals (caddr expr))))
+              (vals (lower-literals* (map cadr (cadr expr)) env))
+              (body (lower-literals (caddr expr) env)))
           (reify-let vars vals body)))
        ((eq? tag 'drop)
-        `(drop ,(lower-literals (cadr expr))))
+        `(drop ,(lower-literals (cadr expr) env)))
        ((eq? tag 'seq)
-        `(seq ,(lower-literals (cadr expr))
-              ,(lower-literals (caddr expr))))
+        `(seq ,(lower-literals (cadr expr) env)
+              ,(lower-literals (caddr expr) env)))
        ((or (eq? tag 'if) (eq? tag 'if/void))
-        `(,tag ,(lower-literals (cadr expr))
-               ,(lower-literals (caddr expr))
-               ,(lower-literals (cadddr expr))))
+        `(,tag ,(lower-literals (cadr expr) env)
+               ,(lower-literals (caddr expr) env)
+               ,(lower-literals (cadddr expr) env)))
        ((or (eq? tag 'call) (eq? tag 'icall))
-        `(,tag ,(cadr expr) . ,(map lower-literals (cddr expr))))
+        `(,tag ,(cadr expr) . ,(lower-literals* (cddr expr) env)))
        ((eq? tag 'apply-procedure)
-        `(apply-procedure . ,(map lower-literals (cdr expr))))
+        `(apply-procedure . ,(lower-literals* (cdr expr) env)))
        ((eq? tag 'lambda)
-        `(lambda ,(cadr expr) ,(lower-literals (caddr expr))))
+        `(lambda ,(cadr expr) ,(lower-literals (caddr expr) env)))
        ((eq? tag '%function-index)
         expr)
        (else
         (trace-and-error expr 'lower-literals "unexpected expr")))))
+  (define (lower-literals* expr* env)
+    (map (lambda (expr) (lower-literals expr env)) expr*))
+  (define (lower-literals-in-function fn env)
+    (let ((def (car fn))
+          (body (cadr fn)))
+      `(,def ,(lower-literals body env))))
 
-  (define (lower-literals-in-function fn)
-    (if (eq? (car fn) '%wasm-import)
-        fn
-        (let ((def (car fn))
-              (body (cadr fn)))
-          `(,def ,(lower-literals body)))))
+  ;; -> ((type . init) ...)
+  (define (make-globals-for-literals nglobals)
+    (if (zero? nglobals)
+        '()
+        (cons (cons 'anyref '(ref.null))
+              (make-globals-for-literals (- nglobals 1)))))
+  ;; -> (fns globals start)
+  (define (lower-literals-in-functions fns)
+    (let* ((cache '())
+           (nglobals 0)
+           (start #f)
+           (env (cons cache (cons nglobals (cons start '()))))
+           (fns (map (lambda (fn) (lower-literals-in-function fn env)) fns))
+           (cache (car env))
+           (nglobals (cadr env))
+           (start (caddr env))
+           (globals (make-globals-for-literals nglobals)))
+      (cons fns (cons globals (cons start '())))))
 
   ;; ====================== ;;
   ;; Compile (make wasm)    ;;
@@ -1240,6 +1295,11 @@
      ((eq? op '<)
       `(i32.lt_s ,(compile-expr (car args) env)
                  ,(compile-expr (cadr args) env)))
+     ((eq? op 'get-global)
+      `(get-global ,(cadr (car args))))
+     ((eq? op 'set-global)
+      `(seq ,(compile-expr (cadr args) env)
+            (set-global ,(cadr (car args)))))
      (else
       (trace-and-error op 'compile-icall "unrecognized intrinsic call"))))
   (define (compile-exprs exprs env)
@@ -1293,12 +1353,10 @@
                      ,(compile-bindings init (cdr bindings) env (+ 1 index)))
                 ,tail))))
   (define (compile-function fn)
-    (if (eq? (car fn) '%wasm-import)
-        fn
-        (let* ((args (number-variables (cdar fn) 0))
-               (body (compile-expr (cadr fn) args)))
-          `(,(max (count-locals body) (length args)) ;; Number of local variables
-            ,body))))
+    (let* ((args (number-variables (cdar fn) 0))
+           (body (compile-expr (cadr fn) args)))
+      `(,(max (count-locals body) (length args)) ;; Number of local variables
+        ,body)))
   (define (compile-functions fn*)
     (map compile-function fn*))
 
@@ -1315,6 +1373,8 @@
 	(count-locals-exprs (cddr body)))
        ((eq? tag 'get-local) (+ 1 (cadr body)))
        ((eq? tag 'set-local) (+ 1 (cadr body)))
+       ((eq? tag 'get-global) 0)
+       ((eq? tag 'set-global) 0)
        ((wasm-simple-op? tag)
         (count-locals-exprs (cdr body)))
        ((eq? tag 'i32.const) 0)
@@ -1344,17 +1404,13 @@
 	(and (pair? t1) (pair? t2)
              (types-equal? (cadr t1) (cadr t2))
              (types-equal? (caddr t1) (caddr t2)))))
-
   (define (lookup-type t types)
-    (if (null? types)
-	#f
-	(if (type-equal? t (car types))
-	    0
-	    (let ((found (lookup-type t (cdr types))))
-	      (if found
-		  (+ 1 found)
-		  #f)))))
+    (index-of t types type-equal?))
 
+  (define (wasm-import? fn)
+    (eq? (car fn) '%wasm-import))
+  (define (wasm-import-name fn)
+    (cadddr fn))
   (define (import-arg-wasm-type type)
     (cond ((eq? type 'scm) 'anyref)
           ((eq? type 'i32) 'i32)
@@ -1365,50 +1421,47 @@
           ((eq? type 'void) '())
           ((eq? type 'bool) '(i32))
           (else (trace-and-error type 'import-return-wasm-type "unhandled"))))
-  (define (function->type fn)
-    (if (eq? (car fn) '%wasm-import)
-        (let ((ret (import-return-wasm-type (caddr fn)))
-              (args (map import-arg-wasm-type (map car (cdr (cdddr fn))))))
-          `(fn ,args ,ret))
-        ;; Scheme functions are assumed to always return an anyref and
-        ;; take some number of anyrefs as inputs.
-        `(fn ,(args->types (cdar fn)) (anyref))))
-  (define (functions->types fns)
-    (if (null? fns)
-        '()
-        (let ((type (function->type (car fns)))
-	      (types (functions->types (cdr fns))))
-          (if (lookup-type type types)
-	      types
-	      (cons type types)))))
-  (define (functions->type-ids fns types)
-    (if (null? fns)
-        '()
-	(if (eq? (caar fns) '%wasm-import)
-	    (functions->type-ids (cdr fns) types)
-	    (cons (lookup-type (function->type (car fns)) types)
-		  (functions->type-ids (cdr fns) types)))))
-  (define (function->name fn)
-    (if (eq? (car fn) '%wasm-import)
-        (cadddr fn)
-        (caar fn)))
+  (define (wasm-import-type fn)
+    (let ((ret (import-return-wasm-type (caddr fn)))
+          (args (map import-arg-wasm-type (map car (cdr (cdddr fn))))))
+      `(fn ,args ,ret)))
 
-  (define (replace-export exports name index)
-    (if (null? exports)
-        '()
-        (let ((ex (car exports))
-              (rest (replace-export (cdr exports) name index)))
-          (if (or (pair? ex) (not (eq? ex name)))
-              (cons ex rest)
-              (cons `(fn ,index ,(symbol->string name)) rest)))))
+  (define (function-name fn)
+    (caar fn))
+  (define (function-type fn)
+    ;; Scheme functions are assumed to always return an anyref and
+    ;; take some number of anyrefs as inputs.
+    `(fn ,(args->types (cdar fn)) (anyref)))
 
-  (define (build-exports exports functions index)
-    (if (null? functions)
-        exports
-        (let ((fn (car functions)))
-          (build-exports (replace-export exports (function->name fn) index)
-                         (cdr functions)
-                         (+ 1 index)))))
+  (define (annotate-function-names-and-types defs)
+    (map (lambda (def)
+           (cons (function-name def) (cons (function-type def) def)))
+         defs))
+  (define (add-start-function name body annotated-defs)
+    (cons (cons name (cons '(fn () ()) `((,name) ,body)))
+          annotated-defs))
+
+  (define (functions->type-ids annotated-defs types)
+    (map (lambda (annotated-def)
+           (let ((type (cadr annotated-def)))
+             (or (lookup-type type types)
+                 (trace-and-error type 'functions->type-ids
+                                  "type not found"))))
+         annotated-defs))
+
+  (define (build-exports exports names)
+    (map (lambda (ex)
+           `(fn ,(or (index-of ex names eq?)
+                     (trace-and-error ex 'build-exports "export not found"))
+                ,(symbol->string ex)))
+         exports))
+  (define (build-imports imports types)
+    (map (lambda (entry)
+           (let ((module (cadr entry))
+                 (name (symbol->string (cadddr entry)))
+                 (type (lookup-type (wasm-import-type entry) types)))
+             `(,module ,name ,type)))
+         imports))
 
   (define (number-list ls i)
     (if (null? ls)
@@ -1420,13 +1473,10 @@
 	(eq? op 'i32.div_s) (eq? op 'i32.rem_s)
         (eq? op 'i32.or) (eq? op 'i32.xor)
         (eq? op 'i32.lt_s) (eq? op 'i32.shr_s) (eq? op 'i32.shl) (eq? op 'drop)
-        (eq? op 'unreachable)))
+        (eq? op 'unreachable) (eq? op 'ref.null)))
 
   (define (resolve-calls-exprs exprs env types)
-    (if (null? exprs)
-        '()
-        (cons (resolve-calls-expr (car exprs) env types)
-	      (resolve-calls-exprs (cdr exprs) env types))))
+    (map (lambda (expr) (resolve-calls-expr expr env types)) exprs))
   (define (resolve-calls-expr expr env types)
     (let ((tag (car expr)))
       (cond
@@ -1434,16 +1484,22 @@
        ((eq? tag 'i32.const) expr)
        ((eq? tag 'get-local) expr)
        ((eq? tag 'set-local) expr)
+       ((eq? tag 'get-global) expr)
+       ((eq? tag 'set-global) expr)
        ((eq? tag 'seq)
         `(seq ,(resolve-calls-expr (cadr expr) env types)
               ,(resolve-calls-expr (caddr expr) env types)))
-       ((eq? tag 'call) (cons 'call (cons (index-of (cadr expr) env)
+       ((eq? tag 'call) (cons 'call (cons (or (index-of (cadr expr) env eq?)
+                                              (trace-and-error expr 'resolve-calls
+                                                               "callee not found"))
 					  (resolve-calls-exprs (cddr expr) env types))))
        ((eq? tag 'call-indirect)
 	(let ((type-id (lookup-type (cadr expr) types)))
 	  `(call-indirect ,type-id . ,(resolve-calls-exprs (cddr expr) env types))))
        ((eq? tag '%function-index)
-	`(i32.const ,(index-of (cadr expr) env)))
+	`(i32.const ,(or (index-of (cadr expr) env eq?)
+                         (trace-and-error expr 'resolve-calls
+                                          "closure target not found"))))
        ((or (eq? tag 'if) (eq? tag 'if/void))
 	`(,tag
           ,(resolve-calls-expr (cadr expr) env types)
@@ -1466,23 +1522,7 @@
   (define (resolve-calls-fn function env types)
     `(,(car function) ,(resolve-calls-expr (cadr function) env types)))
   (define (resolve-calls functions env types)
-    (if (null? functions)
-        '()
-        (if (eq? (caar functions) '%wasm-import)
-            (resolve-calls (cdr functions) env types)
-            (cons (resolve-calls-fn (car functions) env types)
-		  (resolve-calls (cdr functions) env types)))))
-  (define (gather-imports compiled-module types)
-    (if (null? compiled-module)
-        '()
-        (let ((rest (gather-imports (cdr compiled-module) types))
-              (entry (car compiled-module)))
-          (if (eq? (caar compiled-module) '%wasm-import)
-              (let ((module (cadr entry))
-                    (name (symbol->string (cadddr entry)))
-                    (type (lookup-type (function->type entry) types)))
-                (cons `(,module ,name ,type) rest))
-              rest))))
+    (map (lambda (fn) (resolve-calls-fn fn env types)) functions))
 
   ;; ====================== ;;
   ;; Wasm Binary Generation ;;
@@ -1578,6 +1618,10 @@
         (cons #x20 (encode-uleb (cadr expr))))
        ((eq? tag 'set-local)
 	(cons #x21 (encode-uleb (cadr expr))))
+       ((eq? tag 'get-global)
+        (cons #x23 (encode-uleb (cadr expr))))
+       ((eq? tag 'set-global)
+	(cons #x24 (encode-uleb (cadr expr))))
        ((eq? tag 'call)
         (cons (map encode-expr (cddr expr))
               (cons #x10 (encode-uleb (cadr expr)))))
@@ -1633,6 +1677,8 @@
 	(encode-simple-op #x1a expr))
        ((eq? tag 'unreachable)
         (encode-simple-op #x00 expr))
+       ((eq? tag 'ref.null)
+        (encode-simple-op #xd0 expr))
        (else
         (trace-and-error expr 'encode-expr "unrecognized expr")))))
 
@@ -1666,6 +1712,16 @@
     (make-section 4 (make-vec 1
 			      `(#x70 #x00 . ,(encode-uleb num-items)))))
 
+  (define (encode-global global)
+    (cons (cons (encode-type (car global)) #x01)
+          (cons (encode-expr (cdr global)) #x0b)))
+  (define (wasm-global-section globals)
+    (make-section 6 (make-vec (length globals)
+                              (map encode-global globals))))
+
+  (define (wasm-start-section id)
+    (make-section 8 (encode-uleb id)))
+
   (define (wasm-element-section element-ids)
     (make-section 9 (make-vec 1 `(0 ,(encode-expr `(i32.const 0))
 				    #x0b
@@ -1675,32 +1731,53 @@
   ;; Takes a library and returns a list of the corresponding Wasm module
   ;; bytes
   (define (compile-library library)
-    ;; (parsed-lib : (exports . functions)
-    (let ((parsed-lib (parse-library (expand-macros library))))
-      (let ((exports (car parsed-lib)))
-        (let* ((defs (simplify-functions (cdr parsed-lib)))
-               (defs (convert-closures defs))
-               (defs (map lower-literals-in-function defs))
-               (function-names (map function->name defs))
-               (types (functions->types defs))
-	       (type-ids (functions->type-ids defs types))
-               (compiled-module (compile-functions defs))
-               (exports (build-exports exports defs 0))
-               (imports (gather-imports compiled-module types))
-               (functions (resolve-calls compiled-module function-names types)))
-          (generate-module types exports imports functions function-names
-                           type-ids)))))
-  (define (generate-module types exports imports functions function-names type-ids)
-    (cons (wasm-header)
-          (cons (cons (wasm-type-section types)
-                      (cons (wasm-import-section imports)
-                            (cons (wasm-function-section type-ids)
-                                  (cons (wasm-table-section (length function-names))
-					(cons (wasm-export-section exports)
-					      (cons (wasm-element-section
-						     (number-list function-names 0))
-						    (wasm-code-section functions)))))))
-                (wasm-name-section function-names))))
+    (let* ((exports+fns (parse-library (expand-macros library)))
+           (exports (car exports+fns))
+           (fns (cdr exports+fns))
+           (imports (filter wasm-import? fns))
+           (fns (filter-out wasm-import? fns))
+           (fns (simplify-functions fns))
+           (fns (convert-closures fns))
+           (fns+globals+start (lower-literals-in-functions fns))
+           (fns (car fns+globals+start))
+           (globals (cadr fns+globals+start))
+           (start (caddr fns+globals+start))
+           (fns* (annotate-function-names-and-types fns))
+           (start-name (gensym "start"))
+           (fns* (add-start-function start-name start fns*))
+           (fn-names (append (map wasm-import-name imports)
+                             (map car fns*)))
+           (types (remove-duplicates
+                   (append (map wasm-import-type imports)
+                           (map cadr fns*))
+                   type-equal?))
+           (fn-types (functions->type-ids fns* types))
+           (fns (compile-functions (map cddr fns*)))
+           (fns (resolve-calls fns fn-names types))
+           (start-id (index-of start-name fn-names eq?))
+           (imports (build-imports imports types))
+           (exports (build-exports exports fn-names)))
+      (cons
+       (wasm-header)
+       (cons
+        (wasm-type-section types)
+        (cons
+         (wasm-import-section imports)
+         (cons
+          (wasm-function-section fn-types)
+          (cons
+           (wasm-table-section (length fn-names))
+           (cons
+            (wasm-global-section globals)
+            (cons
+             (wasm-export-section exports)
+             (cons
+              (wasm-start-section start-id)
+              (cons
+               (wasm-element-section (number-list fn-names 0))
+               (cons
+                (wasm-code-section fns)
+                (wasm-name-section fn-names)))))))))))))
 
   (define (write-bytes ls)
     (cond
