@@ -18,4 +18,4 @@
   (import (rnrs))
   
   (define (do-test)
-    (string-equal? (read) "Hello, WebAssembly!")))
+    (string=? (read) "Hello, WebAssembly!")))
