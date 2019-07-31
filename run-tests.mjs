@@ -59,7 +59,7 @@ async function runTest(name, compile = compileWithHostScheme) {
         if(testModule) {
             testModule.test(wasm, engine, assert);
         } else {
-            const result = engine.call(wasm, 'do-test');
+            const result = wasm.call('do-test');
             assert.ok(result != false, "test failed");
         }
     } catch (e) {
