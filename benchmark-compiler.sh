@@ -14,4 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-${NODE-node} --experimental-modules --experimental-wasm-anyref benchmark-compiler.mjs
+${NODE-node} --experimental-modules \
+             --experimental-wasm-anyref \
+             --experimental-wasm-return-call \
+             benchmark-compiler.mjs

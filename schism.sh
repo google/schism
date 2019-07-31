@@ -24,4 +24,7 @@ while [ -h "$SOURCE" ]; do # resolve $SOURCE until the file is no longer a symli
 done
 DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
 
-${NODE-node} --experimental-wasm-anyref --experimental-modules $DIR/run-schism.mjs "$@"
+${NODE-node} --experimental-modules \
+             --experimental-wasm-anyref \
+             --experimental-wasm-return-call \
+             $DIR/run-schism.mjs "$@"
