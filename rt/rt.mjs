@@ -14,6 +14,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import fs from 'fs';
+
 class SchemeError extends Error {
     constructor(where, what) {
         super(`Scheme runtime error in ${where}: ${what}`);
@@ -183,6 +185,10 @@ function rt(engine) {
         '%flush-log': () => {
             console.info(engine.log);
             engine.log = "";
+        },
+        '%open-as-stdin': (filename) => {
+            filename = schemeToJS(filename);
+            engine.setCurrentInputPort(fs.readFileSync(filename));
         }
     }
 }

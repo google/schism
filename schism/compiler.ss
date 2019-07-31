@@ -435,7 +435,9 @@
       (void %write-char (i32 c))
       (void error (scm where) (scm what))
       (void %log-char (i32 c))
-      (void %flush-log)))
+      (void %flush-log)
+      ;; TODO: replace %op-as-stdin with proper ports
+      (void %open-as-stdin (scm filename))))
 
   ;; TODO: The %-intrinsics should not be accessible to user code.
   (define (intrinsics)
