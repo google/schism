@@ -55,14 +55,11 @@ async function runTest(name, compile = compileWithHostScheme) {
     // Set up mjs tests
     const testModule = testModules[name];
 
-    let raw_result;
-    let result;
     try {
         if(testModule) {
             testModule.test(wasm, engine, assert);
         } else {
-            raw_result = wasm.exports['do-test']();
-            result = engine.jsFromScheme(raw_result);
+            const result = engine.call(wasm, 'do-test');
             assert.ok(result != false, "test failed");
         }
     } catch (e) {

@@ -6,7 +6,7 @@ export function test(wasm, engine, assert) {
           n
           (+ (fib (- n 1)) (fib (- n 2)))))`);
 
-  const result = engine.jsFromScheme(wasm.exports['read-and-eval']());
+  const result = wasm.call('read-and-eval');
 
   assert.equal(result, 6765, "fib(20)");
 }

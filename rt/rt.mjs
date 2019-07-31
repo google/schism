@@ -1,6 +1,6 @@
 // -*- javascript -*-
 //
-// Copyright 2018 Google LLC
+// Copyright 2018, 2019 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -44,7 +44,7 @@ export class Closure {
 export class EOF {};
 const eofValue = new EOF;
 
-function toJS(x, map) {
+function schemeToJS(x, map) {
     switch (typeof x) {
     case 'number':
         if (x & 1)
@@ -68,13 +68,26 @@ function toJS(x, map) {
             // Store an empty pair early, to allow for circular
             // references.
             const pair = addToMap(map, x, []);
-            pair[0] = toJS(x.car, map);
-            pair[1] = toJS(x.cdr, map);
+            pair[0] = schemeToJS(x.car, map);
+            pair[1] = schemeToJS(x.cdr, map);
             return pair;
         }
         return x;
     default:
-        throw new SchemeError("schemeFromJs", "unhandled value: " + value);
+        throw new SchemeError("schemeToJS", "unhandled value: " + value);
+    }
+}
+
+function jsToScheme(value) {
+    switch (typeof value) {
+    case 'number':
+        return value << 1;
+    case 'boolean':
+    case 'undefined':
+    case 'null':
+        return value;
+    default:
+        throw new SchemeError("jsToScheme", "unhandled value: " + value);
     }
 }
 
@@ -85,11 +98,6 @@ function rt(engine) {
         }
         return -1;
     }
-
-    function makeString(str) { return 's' + str; }
-    function makeSymbol(str) { return 'S' + str; }
-    function stringValue(x) { return x.substring(1); }
-    function symbolValue(x) { return x.substring(1); }
 
     return {
         // The allocators and accessors should be replaced by the GC
@@ -169,7 +177,7 @@ function rt(engine) {
         '%peek-char': peek,
         '%write-char': byte => engine.output_data.push(byte),
         'error': function (where, what) {
-            throw new SchemeError(toJS(where), toJS(what));
+            throw new SchemeError(schemeToJS(where), schemeToJS(what));
         },
         '%log-char': byte => engine.log += String.fromCharCode(byte),
         '%flush-log': () => {
@@ -182,6 +190,10 @@ function rt(engine) {
 class Module {
     get exports() {
         return this.wasm_instance.exports;
+    }
+
+    call(name, ...arg) {
+        return schemeToJS(this.exports[name](...arg.map(jsToScheme)));
     }
 }
 
@@ -222,20 +234,5 @@ export class Engine {
 
     clearOutputBuffer() {
         this.output_data.length = 0;
-    }
-
-    jsFromScheme(x) { return toJS(x); }
-
-    schemeFromJs(value) {
-        switch (typeof value) {
-        case 'number':
-            return value << 1;
-        case 'boolean':
-        case 'undefined':
-        case 'null':
-            return value;
-        default:
-            throw new SchemeError("schemeFromJs", "unhandled value: " + value);
-        }
     }
 }

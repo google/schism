@@ -15,13 +15,6 @@
 
 import * as Schism from  './rt/rt.js';
 
-//const old_peek = rt['peek-char'];
-//rt['peek-char'] = function() {
-//  const result = old_peek();
-//  console.info(`peek: ${result}`);
-//  return result;
-//}
-
 async function compileSchism() {
   const schism_bytes = await fetch('schism-stage0.wasm', { credentials: 'include' });
   const engine = new Schism.Engine;
@@ -36,25 +29,21 @@ async function compileAndRun() {
   const src = document.getElementById('src').value;
   console.info(`Compiling program: '${src}'`);
   const { schism, engine } = await compiler;
-  const compile = schism.exports['compile-stdin->stdout'];
 
   engine.setCurrentInputPortChars(src);
   engine.output_data.length = 0;
-  compile();
+  schism.call('compile-stdin->stdout');
+  const bytes = new Uint8Array(engine.output_data);
+  engine.output_data.length = 0;
 
   console.info("Compilation complete, executing program");
 
-  const bytes = new Uint8Array(engine.output_data);
-  const import_object = {
-    'rt': engine.rt,
-    'memory': { 'memory': engine.memory }
-  };
-  const result = (await WebAssembly.instantiate(bytes, import_object));
-  engine.setCurrentInputPort('');
-  engine.output_data.length = 0;
+  const mod = await engine.loadWasmModule(bytes);
 
-  const scheme_result = engine.jsFromScheme(result.instance.exports.main());
-  document.getElementById('result').innerHTML = "" + scheme_result;
+  engine.setCurrentInputPort('');
+  const result = mod.call('main');
+
+  document.getElementById('result').innerHTML = "" + result;
 
   console.info("Done");
 }
