@@ -436,7 +436,7 @@
       (void error (scm where) (scm what))
       (void %log-char (i32 c))
       (void %flush-log)
-      ;; TODO: replace %op-as-stdin with proper ports
+      ;; TODO: replace %open-as-stdin with proper ports
       (void %open-as-stdin (scm filename))))
 
   ;; TODO: The %-intrinsics should not be accessible to user code.
