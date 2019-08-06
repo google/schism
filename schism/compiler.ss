@@ -683,19 +683,18 @@
       ((cdr pair))))
 
   (define (make-export-environment lib)
-    (let ((name (cadr lib))
-          (body (cddr lib)))
-      (let
-          ((exports (cdar body))
+    (let* ((name (cadr lib))
+           (body (cddr lib))
+           (exports (cdar body))
            (defs (cddr body)))
-        (cons name
-              (add-top-levels-filter
-               (lambda (def)
-                 ;; def == (define (name args ...) body ...)
-                 (let ((name (caadr def)))
-                   (memq name exports)))
-               defs
-               (empty-env))))))
+      (cons name
+            (add-top-levels-filter
+             (lambda (def)
+               ;; def == (define (name args ...) body ...)
+               (let ((name (caadr def)))
+                 (memq name exports)))
+             defs
+             (empty-env)))))
 
   (define (make-let-bindings vars values)
     (map2 (lambda (var value) `(,var ,value)) vars values))
