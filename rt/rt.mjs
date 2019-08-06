@@ -14,8 +14,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import fs from 'fs';
-
 class SchemeError extends Error {
     constructor(where, what) {
         super(`Scheme runtime error in ${where}: ${what}`);
@@ -188,7 +186,8 @@ function rt(engine) {
         },
         '%open-as-stdin': (filename) => {
             filename = schemeToJS(filename);
-            engine.setCurrentInputPort(fs.readFileSync(filename));
+            const file = engine.filesystem.open(filename);
+            engine.setCurrentInputPort(file.readContents());
         }
     }
 }
@@ -204,13 +203,14 @@ class Module {
 }
 
 export class Engine {
-    constructor() {
+    constructor(filesystem) {
         this.rt = rt(this);
         this.input_port_data = [];
         this.input_index = 0;
         this.output_data = [];
         this.modules = [];
         this.log = "";
+        this.filesystem = filesystem;
     }
 
     async loadWasmModule(bytes) {

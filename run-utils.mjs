@@ -15,11 +15,12 @@
 // limitations under the License.
 
 import * as Schism from './rt/rt.mjs';
+import filesystem from './rt/filesystem-node.js';
 
 import child_process from 'child_process';
 import fs from 'fs';
 import util from 'util';
-import root from './root.mjs';
+import root from './root.cjs';
 
 const compilerPath = root.join('schism/compiler.ss');
 
@@ -48,7 +49,7 @@ async function compileBootstrap() {
 
 function make_compiler(compiler_bytes) {
   return async function(bytes) {
-    const engine = new Schism.Engine;
+    const engine = new Schism.Engine(filesystem);
     const schism = await engine.loadWasmModule(await compiler_bytes());
     engine.setCurrentInputPort(bytes);
     schism.exports['compile-stdin->stdout']();

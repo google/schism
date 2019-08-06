@@ -14,10 +14,11 @@
 // limitations under the License.
 
 import * as Schism from  './rt/rt.js';
+import filesystem from './rt/filesystem-null.js';
 
 async function compileSchism() {
   const schism_bytes = await fetch('schism-stage0.wasm', { credentials: 'include' });
-  const engine = new Schism.Engine;
+  const engine = new Schism.Engine(filesystem);
   const schism = await engine.loadWasmModule(await schism_bytes.arrayBuffer());
   console.info('Loading Schism Complete');
   return { schism, engine };
