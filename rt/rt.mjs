@@ -183,6 +183,11 @@ function rt(engine) {
         '%flush-log': () => {
             console.info(engine.log);
             engine.log = "";
+        },
+        '%open-as-stdin': (filename) => {
+            filename = schemeToJS(filename);
+            const file = engine.filesystem.open(filename);
+            engine.setCurrentInputPort(file.readContents());
         }
     }
 }
@@ -198,13 +203,14 @@ class Module {
 }
 
 export class Engine {
-    constructor() {
+    constructor(filesystem) {
         this.rt = rt(this);
         this.input_port_data = [];
         this.input_index = 0;
         this.output_data = [];
         this.modules = [];
         this.log = "";
+        this.filesystem = filesystem;
     }
 
     async loadWasmModule(bytes) {

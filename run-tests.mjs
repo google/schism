@@ -15,6 +15,7 @@
 // limitations under the License.
 
 import * as Schism from './rt/rt.mjs';
+import filesystem from './rt/filesystem-node.js';
 import { compileWithHostScheme, OPTIONS,
     stage0_bytes, stage0_compile,
     stage1_bytes, stage1_compile,
@@ -43,7 +44,7 @@ async function runTest(name, compile = compileWithHostScheme) {
     const file = await compile(bytes);
     fs.writeFileSync('test.wasm', file);
 
-    const engine = new Schism.Engine;
+    const engine = new Schism.Engine(filesystem);
     const wasm = await engine.loadWasmModule(file);
 
     // set up the input port
@@ -117,7 +118,7 @@ async function runTests() {
 
 async function createSchismFromWasm(schism_bytes) {
     return async function(name) {
-        let engine = new Schism.Engine;
+        let engine = new Schism.Engine(filesystem);
         let schism = await engine.loadWasmModule(schism_bytes);
         engine.setCurrentInputPort(fs.readFileSync(name));
         engine.clearOutputBuffer();

@@ -435,7 +435,9 @@
       (void %write-char (i32 c))
       (void error (scm where) (scm what))
       (void %log-char (i32 c))
-      (void %flush-log)))
+      (void %flush-log)
+      ;; TODO: replace %open-as-stdin with proper ports
+      (void %open-as-stdin (scm filename))))
 
   ;; TODO: The %-intrinsics should not be accessible to user code.
   (define (intrinsics)
@@ -451,6 +453,70 @@
       (i32 div0 (i32 x) (i32 y))
       (i32 mod0 (i32 x) (i32 y))
       (bool < (i32 x) (i32 y))))
+
+  ;; ====================== ;;
+  ;; Resolve Imports        ;;
+  ;; ====================== ;;
+  ;;
+  ;; See docs/libraries.md for more detail about what this pass does and how it works.
+  (define (read-imports lib)
+    (let ((name (cadr lib))
+          (imports (cdr (cadddr lib))))
+      (cons lib (read-library-list imports (cons name '())))))
+
+  (define (read-library-list library-names visited)
+    (if (null? library-names)
+        '()
+        (let* ((name (library-name-from-import (car library-names)))
+               (lib (read-library name)))
+          ;; lib = (library name (export exports ...) (import imports...) body)
+          (let ((name (cadr lib))
+                (exports (cdaddr lib))
+                (imports (cdr (cadddr lib)))
+                (body (cdddr lib)))
+            (cons lib (read-library-list
+                       (append (filter-imports imports visited) (cdr library-names))
+                       (cons name visited)))))))
+
+  (define (library-name-equal? lib1 lib2)
+    (list-all-eq? lib1 lib2))
+
+  (define (library-name-from-import import)
+    (if (pair? import)
+        (if (eq? (car import) 'only)
+            (cadr import)
+            import)
+        (error 'library-name-from-import "Malformed import clause")))
+  
+  (define (read-library name)
+    ;; For now, we special case the library from the test case. Later,
+    ;; this will generalize to load any library from a file, with
+    ;; perhaps a few hard-coded ones for Schism intrinsics.
+    ;;
+    ;; TODO: read-library should look up libraries in the library
+    ;; search path and load them.
+    (if (library-name-equal? name '(import-test))
+        (begin
+          (%open-as-stdin "./test/lib/import-test.ss")
+          (read))
+        ;; Just generate a fake empty library for everything else to
+        ;; make this compile.
+        `(library
+             ,name
+           (export)
+           (import))))
+
+  (define (filter-imports imports visited)
+    (if (null? imports)
+        '()
+        (if (find-library-name (car imports) visited)
+            (filter-imports (cdr imports) visited)
+            (cons (car imports) (filter-imports (cdr imports) visited)))))
+
+  (define (find-library-name name name-list)
+    (and (pair? name-list)
+         (or (list-all-eq? name (car name-list))
+             (find-library-name name (cdr name-list)))))
 
   ;; ====================== ;;
   ;; Parsing                ;;
@@ -478,7 +544,7 @@
             (quasicons (expand-quasiquote head level)
                        (expand-quasiquote tail level)))))
         `',expr))
-    
+
   (define (expand-macros expr)
     (if (pair? expr)
         (let ((tag (car expr)))
@@ -531,6 +597,8 @@
   (define (empty-env) '())
   (define (add-env name thunk env)
     (cons (cons name thunk) env))
+  (define (append-env env1 env2)
+    (append env1 env2))
   (define (add-lexical name var env)
     (add-env name
              (lambda () `(var ,var))
@@ -592,6 +660,13 @@
 
   (define (add-top-levels defs env)
     (fold-left add-top-level env defs))
+  (define (add-top-levels-filter filter? defs env)
+    (fold-left (lambda (env def)
+                 (if (filter? def)
+                     (add-top-level env def)
+                     env))
+               env
+               defs))
   (define (add-intrinsics intrinsics env)
     (fold-left add-intrinsic env intrinsics))
   (define (add-imports imports env)
@@ -606,6 +681,20 @@
       (unless pair
         (trace-and-error name 'lookup "unbound identifier"))
       ((cdr pair))))
+
+  (define (make-export-environment lib)
+    (let* ((name (cadr lib))
+           (body (cddr lib))
+           (exports (cdar body))
+           (defs (cddr body)))
+      (cons name
+            (add-top-levels-filter
+             (lambda (def)
+               ;; def == (define (name args ...) body ...)
+               (let ((name (caadr def)))
+                 (memq name exports)))
+             defs
+             (empty-env)))))
 
   (define (make-let-bindings vars values)
     (map2 (lambda (var value) `(,var ,value)) vars values))
@@ -680,21 +769,60 @@
     (map (lambda (fn) (parse-function fn env)) functions))
   (define (compute-imported-functions lib imports)
     (map (lambda (import) `(%wasm-import ,lib . ,import)) imports))
-  (define (parse-library lib)
+  (define (parse-library lib import-envs)
     ;; For now just assume it's correctly formed. We can do error checking later.
     (let* ((body (cddr lib))     ;; skip the library and name
            (exports (cdar body)) ;; names of the functions exported
+           (library-imports (cdadr body))
            (defs (cddr body))
            (imports (runtime-imports))
            (primitives (primitives))
            (env (add-intrinsics (intrinsics)
                                 (add-imports imports (empty-env))))
            (primitives-env (add-top-levels primitives env))
-           (body-env (add-top-levels defs primitives-env)))
+           (body-env (add-imported
+                      ;; every library implicitly imports itself
+                      (cons (cadr lib) library-imports)
+                      import-envs
+                      primitives-env))
+           (body-env (add-top-levels-filter
+                      ;; Filter out names that are exported, since
+                      ;; those have already been included.
+                      (lambda (def)
+                        (let ((name (caadr def)))
+                          (not (memq name exports))))
+                      defs body-env)))
       (cons exports
             (append (compute-imported-functions "rt" imports)
                     (append (parse-functions primitives primitives-env)
                             (parse-functions defs body-env))))))
+  (define (parse-libraries libs)
+    (let ((imported-envs (map make-export-environment libs)))
+      (let ((first (parse-library (car libs) imported-envs))
+            (imported-functions (fold-left (lambda (functions lib)
+                                             (append functions
+                                                     (cdr (parse-library lib imported-envs))))
+                                           '()
+                                           (cdr libs))))
+        (cons (car first) (append (cdr first) imported-functions)))))
+
+  (define (add-imported imports import-envs env)
+    (if (null? imports)
+        env
+        (begin
+          (add-imported (cdr imports)
+                        import-envs
+                        (find-import (library-name-from-import (car imports))
+                                     import-envs
+                                     env)))))
+  (define (find-import library import-envs env)
+    (if (null? import-envs)
+        (begin
+          (display library) (newline)
+          (error 'find-import "Could not find library"))
+        (if (list-all-eq? library (caar import-envs))
+            (append-env (cdar import-envs) env)
+            (find-import library (cdr import-envs) env))))
 
   (define (expand-quote expr)
     (cond
@@ -1119,7 +1247,7 @@
 		 (union free-vars (find-free-vars expr)))
 	       '()
 	       expr*))
-  
+
   (define (generate-closure-function body)
     ;; (tag args free-vars body) -> (tag . body)
     (let ((closure-var (gensym "closure")))
@@ -1738,7 +1866,8 @@
   ;; Takes a library and returns a list of the corresponding Wasm module
   ;; bytes
   (define (compile-library library)
-    (let* ((exports+fns (parse-library (expand-macros library)))
+    (let* ((libraries (read-imports library))
+           (exports+fns (parse-libraries (map expand-macros libraries)))
            (exports (car exports+fns))
            (fns (cdr exports+fns))
            (imports (filter wasm-import? fns))
