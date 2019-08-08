@@ -4,11 +4,10 @@ works in order to add new functionality to Schism, as it affects when you are
 allowed to use certain features. Schism has four stages: stage0, stage1,
 stage2, and stage3.
 
-Stage0 is also called the snapshot. We keep it checked into the repo, but it
-doesn't have to be (and probably shouldn't be). It's a working version of the
-compiler in binary form (Wasm, in this case), that is used to jump start the
-rest of the compilation process. Note that you can also use
-bootstrap-from-guile.sh to regenerate this.
+Stage0 is also called the snapshot. We keep it checked into the repo. It's a
+working version of the compiler in binary form (Wasm, in this case), that is
+used to jump start the rest of the compilation process. Note that you can also
+use bootstrap-from-guile.sh to regenerate this.
 
 Stage1 is Schism compiled by the stage0 compiler. I'll say more about this in a
 second.
