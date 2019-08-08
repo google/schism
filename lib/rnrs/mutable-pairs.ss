@@ -1,4 +1,4 @@
-;; Copyright 2018 Google LLC
+;; Copyright 2018, 2019 Google LLC
 ;;
 ;; Licensed under the Apache License, Version 2.0 (the License);
 ;; you may not use this file except in compliance with the License.
@@ -12,11 +12,15 @@
 ;; See the License for the specific language governing permissions and
 ;; limitations under the License.
 
-(library
-    (trivial)
-  (export do-test)
-  (import (rnrs)
-          (schism))
+(library (rnrs mutable-pairs)
+  (export set-car! set-cdr!)
+  (import (rnrs))
 
-  (define (do-test)
-    (list-all-eq? (read) '(1 2 #x42 #t #f))))
+  (define (set-car! p a)
+    (if (pair? p)
+        (%set-car! p a)
+        (error 'set-car! "set-car!: not a pair")))
+  (define (set-cdr! p d)
+    (if (pair? p)
+        (%set-cdr! p d)
+        (error 'set-cdr! "set-cdr!: not a pair"))))

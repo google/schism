@@ -1,4 +1,4 @@
-;; Copyright 2018 Google LLC
+;; Copyright 2019 Google LLC
 ;;
 ;; Licensed under the Apache License, Version 2.0 (the License);
 ;; you may not use this file except in compliance with the License.
@@ -12,11 +12,18 @@
 ;; See the License for the specific language governing permissions and
 ;; limitations under the License.
 
-(library
-    (trivial)
-  (export do-test)
-  (import (rnrs)
-          (schism))
+;; This library contains non-standard Schism-isms.
+(library (schism)
+  (export gensym list-all-eq?)
+  (import (rnrs))
 
-  (define (do-test)
-    (list-all-eq? (read) '(1 2 #x42 #t #f))))
+  (define (gensym t) ;; Creates a brand new symbol that cannot be reused
+    (unless (string? t) (error 'gensym "not a string"))
+    (%make-gensym t))
+  
+  (define (list-all-eq? a b)
+    (if (null? a)
+        (null? b)
+        (and (not (null? b))
+             (eq? (car a) (car b))
+             (list-all-eq? (cdr a) (cdr b))))))

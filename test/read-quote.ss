@@ -15,7 +15,8 @@
 (library
     (trivial)
   (export do-test)
-  (import (rnrs))
+  (import (rnrs)
+          (schism))
 
   (define (do-test)
     (list-all-eq? (read) ''5)))
