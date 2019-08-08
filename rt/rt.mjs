@@ -203,7 +203,7 @@ class Module {
 }
 
 export class Engine {
-    constructor(filesystem) {
+    constructor({ filesystem }) {
         this.rt = rt(this);
         this.input_port_data = [];
         this.input_index = 0;
