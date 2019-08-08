@@ -49,7 +49,7 @@ async function compileBootstrap() {
 
 function make_compiler(compiler_bytes) {
   return async function(bytes) {
-    const engine = new Schism.Engine(filesystem);
+    const engine = new Schism.Engine({ filesystem });
     const schism = await engine.loadWasmModule(await compiler_bytes());
     engine.setCurrentInputPort(bytes);
     schism.exports['compile-stdin->stdout']();

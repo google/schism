@@ -44,7 +44,7 @@ async function runTest(name, compile = compileWithHostScheme) {
     const file = await compile(bytes);
     fs.writeFileSync('test.wasm', file);
 
-    const engine = new Schism.Engine(filesystem);
+    const engine = new Schism.Engine({ filesystem });
     const wasm = await engine.loadWasmModule(file);
 
     // set up the input port
@@ -118,7 +118,7 @@ async function runTests() {
 
 async function createSchismFromWasm(schism_bytes) {
     return async function(name) {
-        let engine = new Schism.Engine(filesystem);
+        let engine = new Schism.Engine({ filesystem });
         let schism = await engine.loadWasmModule(schism_bytes);
         engine.setCurrentInputPort(fs.readFileSync(name));
         engine.clearOutputBuffer();
