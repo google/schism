@@ -203,14 +203,14 @@ class Module {
 }
 
 export class Engine {
-    constructor(options) {
+    constructor({ filesystem }) {
         this.rt = rt(this);
         this.input_port_data = [];
         this.input_index = 0;
         this.output_data = [];
         this.modules = [];
         this.log = "";
-        this.filesystem = options.filesystem;
+        this.filesystem = filesystem;
     }
 
     async loadWasmModule(bytes) {
