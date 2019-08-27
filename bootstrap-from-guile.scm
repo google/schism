@@ -13,6 +13,7 @@
 ;; limitations under the License.
 
 (add-to-load-path ".")
+(add-to-load-path "./lib")
 (eval-when (expand load compile)
   (set! %load-extensions (cons ".ss" %load-extensions)))
 
@@ -23,7 +24,11 @@
 ;; Guile's make-symbol has this property; Guile's gensym does not.  Use
 ;; make-symbol as gensym, then.
 ;;
-(define-module (chezscheme) #:re-export ((make-symbol . gensym)))
+(define-module (%schism-runtime)
+  #:re-export ((make-symbol . %make-gensym))
+  #:export (%open-as-stdin))
+(define (%open-as-stdin filename)
+  (set-current-input-port (open-file filename "r")))
 
 (define-module (bootstrap)
   #:use-module (schism compiler))
