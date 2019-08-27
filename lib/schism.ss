@@ -15,7 +15,8 @@
 ;; This library contains non-standard Schism-isms.
 (library (schism)
   (export gensym list-all-eq?)
-  (import (rnrs))
+  (import (rnrs)
+          (%schism-runtime))
 
   (define (gensym t) ;; Creates a brand new symbol that cannot be reused
     (unless (string? t) (error 'gensym "not a string"))

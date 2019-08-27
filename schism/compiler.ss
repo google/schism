@@ -16,7 +16,8 @@
   (export compile-library compile-stdin->stdout)
   (import (rnrs)
           (rnrs mutable-pairs)
-          (schism))
+          (schism)
+          (%schism-runtime))
   ;; ====================== ;;
   ;; Helpers, etc.          ;;
   ;; ====================== ;;
