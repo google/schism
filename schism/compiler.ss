@@ -189,9 +189,9 @@
      ((library-name-equal? name '(import-test))
       (read-library-from-file "./test/lib/import-test.ss"))
      ((library-name-equal? name '(rnrs))
-      (read-library-from-file "./lib/rnrs.ss"))
+      (read-library-from-file "./scheme-lib/rnrs.ss"))
      ((library-name-equal? name '(rnrs mutable-pairs))
-      (read-library-from-file "./lib/rnrs/mutable-pairs.ss"))
+      (read-library-from-file "./scheme-lib/rnrs/mutable-pairs.ss"))
      ((library-name-equal? name '(schism))
       (read-library-from-file "./lib/schism.ss"))
      (else
