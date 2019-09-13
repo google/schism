@@ -15,7 +15,8 @@
 (library
     (trivial)
   (export do-test)
-  (import (rnrs))
+  (import (rnrs)
+          (schism))
 
   (define (number->leb-u8-list n)
     (if (and (< n #x40) (> n (- 0 #x40)))

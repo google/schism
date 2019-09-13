@@ -15,7 +15,8 @@
 (library
     (trivial)
   (export do-test)
-  (import (rnrs))
+  (import (rnrs)
+          (rnrs mutable-pairs))
 
   (define (do-test)
     (let ((p (cons 1 2)))

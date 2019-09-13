@@ -16,7 +16,7 @@
 //
 // This is a fake file system where all files exist but are empty.
 
-export const filesystem = {
+export default {
     open: (filename) => {
         return {
             readContents: () => ""
