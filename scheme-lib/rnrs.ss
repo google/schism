@@ -13,10 +13,10 @@
 ;; limitations under the License.
 
 (library (rnrs)
-  (export > append assq boolean? caaar caadar caaddr caadr caar cadadr
+  (export > append assp assq boolean? caaar caadar caaddr caadr caar cadadr
           cadar caddar cadddr caddr cadr car cdaddr cdadr cdar cddar cdddr cddr
           cdr char->integer char-ci<? char-numeric? char-whitespace? display
-          fold-left fold-right integer->char length list->string list-ref
+          equal? fold-left fold-right integer->char length list->string list-ref
           list-tail map max newline null? peek-char read read-char string->list
           string->symbol string=? symbol->string symbol? write write-char zero?)
   (import (schism))
@@ -38,6 +38,8 @@
       (%display-least-significant-digit x))
      ((char? x) (%log-char #\#) (%log-char #\\) (%log-char x))
      ((string? x) (%log-char #\") (%display-raw-string x) (%log-char #\"))
+     ((procedure? x)
+      (%display-raw-string "#<procedure>"))
      (else (%display-raw-string "<!display unknown unimplemented!>"))))
 
   (define (%display-leading-digits n)
@@ -110,6 +112,14 @@
   (define (cadadr p) (car (cdadr p)))
   (define (cadddr p) (car (cdddr p)))
   (define (cdaddr p) (cdr (caddr p)))
+  (define (assp p ls)
+    (if (pair? ls)
+        (if (p (caar ls))
+            (car ls)
+            (assp p (cdr ls)))
+        (if (null? ls)
+            #f
+            (begin (display ls) (newline) (error 'assp "not a list")))))
   (define (assq x ls)
     (if (pair? ls)
         (if (eq? x (caar ls))
@@ -171,6 +181,15 @@
         ;; calling error here can lead to an infinite loop, so we
         ;; generate an unreachable instead.
         (%unreachable)))
+  (define (equal? x y)
+    (cond ((pair? x)
+           (and (pair? y)
+                (equal? (car x) (car y))
+                (equal? (cdr x) (cdr y))))
+          ((string? x)
+           (and (string? y)
+                (equal? (string->list x) (string->list y))))
+          (else (eq? x y))))
   (define (symbol->string x)
     (unless (symbol? x) (error 'symbol->string "not a symbol"))
     (%symbol->string x))
