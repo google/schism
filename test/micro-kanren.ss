@@ -53,24 +53,23 @@
             (else (equal? u v)))))
 
   ;;; Goals
-  (define (succeed s/c) `(,s/c))
-  (define (fail s/c) '())
+  (define (succeed s.c) `(,s.c))
+  (define (fail s.c) '())
 
   (define (== u v)
-    (lambda (s/c)
-      (let ((s (unify u v (car s/c))))
-        (if s (succeed `(,s . ,(cdr s/c))) (fail s)))))
+    (lambda (s.c)
+      (let ((s (unify u v (car s.c))))
+        (if s (succeed `(,s . ,(cdr s.c))) (fail s)))))
 
-  (define (run goal)
+  (define (run n goal)
     (let ((result (goal '(() . 0))))
       (if (null? result)
           result
-          (map car (pull result)))))
+          (map car (take n result)))))
 
-  ;;; assumes (var 'q)
-  (define (run* goal)
+  (define (run* n var goal)
     (let ((result (goal '(() . 0))))
-      (map (lambda (s) (lookup* (var 'q) (car s))) result)))
+      (take n (map-$ (lambda (s.c) (lookup* var (car s.c))) result))))
 
   (define (choice var lst)
     (if (null? lst)
@@ -79,17 +78,17 @@
               (choice var (cdr lst)))))
 
   (define (call/fresh f)
-    (lambda (s/c)
-      (let ((c (cdr s/c)))
-        ((f (var c)) `(,(car s/c) . ,(+ c 1))))))
+    (lambda (s.c)
+      (let ((c (cdr s.c)))
+        ((f (var c)) `(,(car s.c) . ,(+ c 1))))))
 
   (define (disj g1 g2)
-    (lambda (s/c)
-      (interleave (g1 s/c) (g2 s/c))))
+    (lambda (s.c)
+      (interleave (g1 s.c) (g2 s.c))))
 
   (define (conj g1 g2)
-    (lambda (s/c)
-      (bind (g1 s/c) g2)))
+    (lambda (s.c)
+      (bind (g1 s.c) g2)))
 
   (define (interleave $1 $2)
     (cond ((null? $1) $2)
@@ -103,21 +102,18 @@
 
   (define (map-$ g $)
     (cond ((null? $) '())
-          ((procedure? $) (lambda () (map-$ g ($))))
+          ((procedure? $) (map-$ g ($)))
           (else (cons (g (car $))
-                      (map-$ g (cdr $))))))
+                      (lambda () (map-$ g (cdr $)))))))
 
-  (define (fives x)
-    (disj (== x 5)
-          (lambda (s/c)
+  (define (natural* x n)
+    (disj (== x n)
+          (lambda (s)
             (lambda ()
-              ((fives x) s/c)))))
-
-  (define (sixes x)
-    (disj (== x 6)
-          (lambda (s/c)
-            (lambda ()
-              ((sixes x) s/c)))))
+              ((natural* x (+ n 1)) s)))))
+  
+  (define (natural x)
+    (natural* x 0))
 
   (define (pull $)
     (if (procedure? $) ($) $))
@@ -151,53 +147,17 @@
                                (appendo tl y z*)))))))))))
 
 
-  (define (cout message thing)
-    (newline)
-    (write message)
-    (newline)
-    (write thing)
-    (newline))
-
   (define (do-test)
     (let ((empty-state '(() . 0))
           (vx (var 'x))
           (vy (var 'y))
-          (vz (var 'z))
-          (vq (var 'q)))
-      (cout "unify vx vy"
-            (unify vx vy '()))
-      (cout "unify vx vy after unify vy 1"
-            (unify vx vy (unify vy 1 '())))
-      (cout "1 propagates to vx"
-            (lookup vx (unify vx vy (unify vy 1 '()))))
-      (cout "variables inside pair"
-            (unify (cons vx vy) (cons 1 vx) '()))
-      (cout "as above, but run"
-            (run (== `(,vx 2 . ,vy) '(1 2 3 4))))
-      (cout "impossible conjunction"
-            ((conj (conj (== vx 3)
-                         (== vy 4))
-                   (== vx vy))
-             empty-state))
-      (cout "choice of 2"
-            (run (choice 2 '(1 2 3))))
-      (cout "choice of 20"
-            (run (choice 20 '(1 2 3))))
-      (cout "variable bound choice"
-            (run (choice vx '(1 2 3))))
-      (cout "common member of lists"
-            (run (common-element '(1 2 3) '(4 3 2))))
-      (cout "conso 1"
-            (run (conso 1 vx '(1 2 3))))
-      (cout "conso 2"
-            (run (conso vx vy `(1 2 ,vx))))
-      (cout "(appendo '(1) '(2) vx)"
-            (run* (appendo '(1) '(2) vq)))
-      (cout "(appendo '(1) '(2) '(1))"
-            (run* (appendo '(1) '(2) '(1))))
-      (cout "(appendo '(1 2) vq '(1 2 3 4 5))"
-            (run* (appendo '(1 2) vq '(1 2 3 4 5))))
-      (cout "(appendo vx vq '(1 2 3 4 5))"
-            (run* (conj (appendo vx vy '(1 2 3 4 5))
-                        (== vq `(,vx ,vy)))))
-      'done)))
+          (vz (var 'z)))
+      (and (equal? '(1 2)
+                   (run* 2 vx (choice vx '(1 2 3))))
+           (equal? '(0 1 2 3 4)
+                   (run* 5 vy (conj (== vy vx) (natural vx))))
+           (equal? '()
+                   (run* 2 vx (conj (choice vx '(1 2 3)) (== vx 0))))
+           (equal? '((() (0 1 2)) ((0) (1 2)) ((0 1) (2)) ((0 1 2) ()))
+                   (run* 4 vz (conj (== vz `(,vx ,vy))
+                                    (appendo vx vy '(0 1 2)))))))))
