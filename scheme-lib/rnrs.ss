@@ -17,8 +17,9 @@
           cadar caddar cadddr caddr cadr car cdaddr cdadr cdar cddar cdddr cddr
           cdr char->integer char-ci<? char-numeric? char-whitespace? display
           equal? fold-left fold-right integer->char length list->string list-ref
-          list-tail map max newline null? peek-char read read-char string->list
-          string->symbol string=? symbol->string symbol? write write-char zero?)
+          list-tail list? map max newline null? peek-char read read-char
+          string->list string->symbol string=? symbol->string symbol? write
+          write-char zero?)
   (import (schism))
 
   (define (display x)
@@ -166,8 +167,8 @@
   (define (char-ci<? c1 c2)
     (< (char->integer c1) (char->integer c2)))
   (define (list->string ls)
-    (unless (pair? ls) (error 'list->string "list->string: not a pair"))
-    ;; For now we represent strings as lists of characters.
+    (unless (list? ls)
+      (error 'list->string "list->string: not a proper list"))
     (%list->string ls))
   (define (string->list s)
     (unless (string? s)
@@ -176,7 +177,8 @@
             (%unreachable))
     (%string->list s))
   (define (string=? s1 s2)
-    (list-all-eq? (string->list s1) (string->list s2)))
+    ;; This is ok because strings are currently represented as javascript values.
+    (eq? s1 s2))
   (define (string->symbol s)
     (if (string? s)
         (%string->symbol s)
@@ -190,7 +192,7 @@
                 (equal? (cdr x) (cdr y))))
           ((string? x)
            (and (string? y)
-                (equal? (string->list x) (string->list y))))
+                (string=? x y)))
           (else (eq? x y))))
   (define (symbol->string x)
     (unless (symbol? x) (error 'symbol->string "not a symbol"))
@@ -324,6 +326,16 @@
     (eq? n 0))
   (define (null? x)
     (eq? x '()))
+  (define (tortoise-hare tortoise hare)
+    (if (pair? hare)
+        (let ((hare (cdr hare)))
+          (if (pair? hare)
+              (and (not (eq? tortoise hare))
+                   (tortoise-hare (cdr tortoise) (cdr hare)))
+              (null? hare)))
+        (null? hare)))
+  (define (list? x)
+    (tortoise-hare x x))
   (define (boolean? p)
     (or (eq? p #t) (eq? p #f)))
   (define (symbol? p)
