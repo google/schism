@@ -21,5 +21,7 @@ export default {
         return {
             readContents: () => fs.readFileSync(filename)
         };
-    }
+    },
+
+    exists: (filename) => fs.existsSync(filename),
 };

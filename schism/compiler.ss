@@ -123,8 +123,9 @@
       (void error (scm where) (scm what))
       (void %log-char (i32 c))
       (void %flush-log)
-      ;; TODO: replace %open-as-stdin with proper ports
-      (void %open-as-stdin (scm filename))))
+      ;; TODO: replace %open-as-stdin and %file-exists? with proper ports
+      (void %open-as-stdin (scm filename))
+      (bool %file-exists? (scm filename))))
 
   ;; TODO: The %-intrinsics should not be accessible to user code.
   (define (intrinsics)

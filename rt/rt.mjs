@@ -192,6 +192,10 @@ function rt(engine) {
             filename = schemeToJS(filename);
             const file = engine.filesystem.open(filename);
             engine.setCurrentInputPort(file.readContents());
+        },
+        '%file-exists?': (filename) => {
+            filename = schemeToJS(filename);
+            return jsToScheme(engine.filesystem.exists(filename));
         }
     }
 }
