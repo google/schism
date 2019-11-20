@@ -126,7 +126,8 @@ function rt(engine) {
         // that's not specified on the Scheme language level.  Using JS
         // strings for symbols allows us to compare with ===, as is
         // required.
-        'string?': x => x instanceof String && x.charAt(0) === 's',
+        'string?': x => (typeof x === 'string' || x instanceof String)
+                     && x.charAt(0) === 's',
         '%symbol?': x => typeof(x) === 'string' && x.charAt(0) === 'S',
         '%string=?' : (x, y) => x.valueOf() === y.valueOf(),
 
@@ -145,7 +146,7 @@ function rt(engine) {
         },
 
         '%string->symbol': value => 'S' + value,
-        '%symbol->string': x => new String (x.substring(1)),
+        '%symbol->string': x => x.substring(1),
 
         // Gensyms are instances of String (objects with identity).
         '%make-gensym': str => new String('S' + str),
