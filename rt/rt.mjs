@@ -148,6 +148,8 @@ function rt(engine) {
         '%string->symbol': value => 'S' + value,
         '%symbol->string': x => x.substring(1),
 
+        '%string-append': (x, y) => 's' + x.substring(1) + y.substring(1),
+
         // Gensyms are instances of String (objects with identity).
         '%make-gensym': str => new String('S' + str),
         '%gensym?': x => x instanceof String && x.charAt(0) === 'S',

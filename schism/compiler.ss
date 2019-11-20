@@ -92,6 +92,8 @@
       (scm %list->string (scm x))
       (scm %string->list (scm x))
 
+      (scm %string-append (scm x) (scm y))
+
       (scm %string->symbol (scm x))
       (scm %symbol->string (scm x))
 
@@ -179,7 +181,7 @@
   (define (read-library-from-file filename)
     (%open-as-stdin filename)
     (read))
-  
+
   (define (read-library name)
     ;; For now, we special case the library from the test case and
     ;; some built-in libraries. Later, this will generalize to load
