@@ -177,8 +177,7 @@
             (%unreachable))
     (%string->list s))
   (define (string=? s1 s2)
-    ;; This is ok because strings are currently represented as javascript values.
-    (eq? s1 s2))
+    (%string=? s1 s2))
   (define (string->symbol s)
     (if (string? s)
         (%string->symbol s)

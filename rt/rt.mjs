@@ -60,6 +60,8 @@ function schemeToJS(x, map) {
         return x;
     case 'object':
         if (x instanceof String) {
+            if (x.charAt(0) === 's')
+                return x.substring(1);
             return x.substring(2);
         }
         if (x instanceof Pair) {
@@ -124,15 +126,17 @@ function rt(engine) {
         // that's not specified on the Scheme language level.  Using JS
         // strings for symbols allows us to compare with ===, as is
         // required.
-        'string?': x => typeof(x) === 'string' && x.charAt(0) === 's',
+        'string?': x => (typeof x === 'string' || x instanceof String)
+                     && x.charAt(0) === 's',
         '%symbol?': x => typeof(x) === 'string' && x.charAt(0) === 'S',
+        '%string=?' : (x, y) => x.valueOf() === y.valueOf(),
 
         // The code still wants to access chars as a list.
         '%list->string': chars => {
             let ret = 's';
             for (; chars != null; chars = chars.cdr)
                 ret += String.fromCharCode(chars.car >>> 1);
-            return ret;
+            return new String (ret);
         },
         '%string->list': x => {
             let ret = null;
@@ -146,7 +150,7 @@ function rt(engine) {
 
         // Gensyms are instances of String (objects with identity).
         '%make-gensym': str => new String('S' + str),
-        '%gensym?': x => x instanceof String,
+        '%gensym?': x => x instanceof String && x.charAt(0) === 'S',
 
         'cons': (car, cdr) => new Pair(car, cdr),
         'pair?': x => x instanceof Pair,

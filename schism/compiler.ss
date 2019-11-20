@@ -87,6 +87,7 @@
 
       (bool string? (scm x))
       (bool %symbol? (scm x))
+      (bool %string=? (scm x) (scm y))
 
       (scm %list->string (scm x))
       (scm %string->list (scm x))
@@ -542,7 +543,7 @@
                    eq? number? char?
                    %make-number %make-char
                    %number-value %char-value
-                   string? %symbol?
+                   string? %symbol? %string=?
                    %list->string %string->list
                    %string->symbol %symbol->string
                    %make-gensym %gensym?
