@@ -21,5 +21,7 @@ export default {
         return {
             readContents: () => ""
         };
-    }
+    },
+
+    exists: (filename) => false,
 };

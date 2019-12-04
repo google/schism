@@ -18,8 +18,8 @@
           cdr char->integer char-ci<? char-numeric? char-whitespace? display
           equal? fold-left fold-right integer->char length list->string list-ref
           list-tail list? map max newline null? peek-char read read-char
-          string->list string->symbol string=? symbol->string symbol? write
-          write-char zero?)
+          string->list string->symbol string=? symbol->string string-append
+          symbol? write write-char zero?)
   (import (schism))
 
   (define (display x)
@@ -86,7 +86,7 @@
     (if (string? x)
         (%display-raw-string x)
         (display x)))
-  
+
   (define (newline)
     (%flush-log))
 
@@ -199,6 +199,11 @@
   (define (string->symbol str)
     (unless (string? str) (error 'string->symbol "not a string"))
     (%string->symbol str))
+
+  (define (string-append s1 s2)
+    (unless (and (string? s1) (string? s2)) (error 'string-append "not a string"))
+    (%string-append s1 s2))
+
   (define (> a b)
     (< b a))
   (define (max a b)

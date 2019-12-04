@@ -148,6 +148,8 @@ function rt(engine) {
         '%string->symbol': value => 'S' + value,
         '%symbol->string': x => x.substring(1),
 
+        '%string-append': (x, y) => new String('s' + x.substring(1) + y.substring(1)),
+
         // Gensyms are instances of String (objects with identity).
         '%make-gensym': str => new String('S' + str),
         '%gensym?': x => x instanceof String && x.charAt(0) === 'S',
@@ -192,6 +194,10 @@ function rt(engine) {
             filename = schemeToJS(filename);
             const file = engine.filesystem.open(filename);
             engine.setCurrentInputPort(file.readContents());
+        },
+        '%file-exists?': (filename) => {
+            filename = schemeToJS(filename);
+            return jsToScheme(engine.filesystem.exists(filename));
         }
     }
 }

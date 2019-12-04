@@ -92,6 +92,8 @@
       (scm %list->string (scm x))
       (scm %string->list (scm x))
 
+      (scm %string-append (scm x) (scm y))
+
       (scm %string->symbol (scm x))
       (scm %symbol->string (scm x))
 
@@ -123,8 +125,9 @@
       (void error (scm where) (scm what))
       (void %log-char (i32 c))
       (void %flush-log)
-      ;; TODO: replace %open-as-stdin with proper ports
-      (void %open-as-stdin (scm filename))))
+      ;; TODO: replace %open-as-stdin and %file-exists? with proper ports
+      (void %open-as-stdin (scm filename))
+      (bool %file-exists? (scm filename))))
 
   ;; TODO: The %-intrinsics should not be accessible to user code.
   (define (intrinsics)
@@ -178,28 +181,40 @@
   (define (read-library-from-file filename)
     (%open-as-stdin filename)
     (read))
-  
+
+  (define (find-library-file name)
+    (let ((search-paths '("./test/lib"
+                          "./lib"
+                          "./scheme-lib"))
+          (path-suffix (string-append
+                        (fold-left (lambda (path part)
+                                     (string-append
+                                      path
+                                      (string-append "/" (symbol->string part))))
+                                   ""
+                                   name)
+                        ".ss")))
+      (fold-left (lambda (found base-path)
+                   (or found
+                       (let ((path (string-append base-path path-suffix)))
+                         (and (%file-exists? path) path))))
+                 #f
+                 search-paths)))
+
   (define (read-library name)
-    ;; For now, we special case the library from the test case and
-    ;; some built-in libraries. Later, this will generalize to load
-    ;; any library from a file, with perhaps a few hard-coded ones for
-    ;; Schism intrinsics.
-    ;;
-    ;; TODO: read-library should look up libraries in the library
-    ;; search path and load them.
     (cond
-     ((library-name-equal? name '(import-test))
-      (read-library-from-file "./test/lib/import-test.ss"))
-     ((library-name-equal? name '(rnrs))
-      (read-library-from-file "./scheme-lib/rnrs.ss"))
-     ((library-name-equal? name '(rnrs mutable-pairs))
-      (read-library-from-file "./scheme-lib/rnrs/mutable-pairs.ss"))
-     ((library-name-equal? name '(schism))
-      (read-library-from-file "./lib/schism.ss"))
-     (else
-      ;; Just generate a fake empty library for everything else to
-      ;; make this compile.
-      `(library ,name (export) (import)))))
+     ;; Special case internal libraries
+     ;;
+     ;; TODO: only bring the intrinsic names into scope if these
+     ;; libraries are loaded.
+     ((library-name-equal? name '(%schism-runtime))
+      '(library (%schism-runtime) (export) (import)))
+     (else (let ((path (find-library-file name)))
+             (if path
+                 (read-library-from-file path)
+                 (begin
+                   (display name) (newline)
+                   (error 'read-library "Could not find library")))))))
 
   (define (filter-imports imports visited)
     (if (null? imports)
