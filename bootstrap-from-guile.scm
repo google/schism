@@ -25,7 +25,8 @@
 ;; make-symbol as gensym, then.
 ;;
 (define-module (%schism-runtime)
-  #:re-export ((make-symbol . %make-gensym))
+  #:re-export ((make-symbol . %make-gensym)
+               (file-exists? . %file-exists?))
   #:export (%open-as-stdin))
 (define (%open-as-stdin filename)
   (set-current-input-port (open-file filename "r")))
