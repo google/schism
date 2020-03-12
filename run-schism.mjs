@@ -19,7 +19,7 @@ import { stage0_compile, stage1_compile, stage2_compile } from './run-utils.mjs'
 import fs from 'fs';
 import util from 'util';
 import process from 'process';
-import cli from './cli';
+import cli from './cli.cjs';
 
 async function runSchism() {
     // set up the input port
