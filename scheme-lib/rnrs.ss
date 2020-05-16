@@ -184,6 +184,7 @@
         ;; calling error here can lead to an infinite loop, so we
         ;; generate an unreachable instead.
         (%unreachable)))
+  ;; doesn't handle procedure or cyclic structure equivalence
   (define (equal? x y)
     (cond ((pair? x)
            (and (pair? y)

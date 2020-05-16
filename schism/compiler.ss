@@ -169,7 +169,7 @@
                        (cons name visited)))))))
 
   (define (library-name-equal? lib1 lib2)
-    (list-all-eq? lib1 lib2))
+    (equal? lib1 lib2))
 
   (define (library-name-from-import import)
     (if (pair? import)
@@ -225,7 +225,7 @@
 
   (define (find-library-name name name-list)
     (and (pair? name-list)
-         (or (list-all-eq? name (car name-list))
+         (or (equal? name (car name-list))
              (find-library-name name (cdr name-list)))))
 
   ;; ====================== ;;
@@ -557,7 +557,7 @@
         (begin
           (display library) (newline)
           (error 'find-import "Could not find library"))
-        (if (list-all-eq? library (caar import-envs))
+        (if (equal? library (caar import-envs))
             (append-env (cdar import-envs) env)
             (find-import library (cdr import-envs) env))))
 

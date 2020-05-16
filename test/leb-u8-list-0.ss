@@ -15,8 +15,7 @@
 (library
     (trivial)
   (export do-test)
-  (import (rnrs)
-          (schism))
+  (import (rnrs))
 
   (define (number->leb-u8-list n)
     (if (and (< n #x40) (> n (- 0 #x40)))
@@ -25,4 +24,4 @@
               (number->leb-u8-list (bitwise-arithmetic-shift-right n 7)))))
 
   (define (do-test)
-    (list-all-eq? (number->leb-u8-list 0) '(0))))
+    (equal? (number->leb-u8-list 0) '(0))))
