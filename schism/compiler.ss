@@ -66,13 +66,6 @@
             (set-diff (cdr set) sub)
             (cons (car set) (set-diff (cdr set) sub)))))
 
-  ;; TODO: move this into the library
-  (define (memq x ls)
-    (cond
-     ((null? ls) #f)
-     ((eq? (car ls) x) ls)
-     (else (memq x (cdr ls)))))
-
   (define (runtime-imports)
     '((bool eq? (scm x) (scm y))
 
