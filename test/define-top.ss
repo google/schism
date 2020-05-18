@@ -16,6 +16,7 @@
   (export do-test)
   (import (rnrs))
 
+  (define hole)
   (define f cons)
   (define y "abc")
   (define x (f y 12))
