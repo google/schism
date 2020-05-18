@@ -19,9 +19,12 @@
   (define f cons)
   (define y "abc")
   (define x (f y 12))
-  ;;  (define w (let ((a 12)) (let* ((z (lambda (y) (f y y)))) (z (cons a a)))))
+  (define (w b)
+    (let ((z (lambda (y) (f y b))))
+      (z 0)))
 
   (define (do-test)
-    (equal? x '("abc" . 12)))
+    (and (equal? x '("abc" . 12))
+         (equal? (w y) '(0 . "abc"))))
 
   )
