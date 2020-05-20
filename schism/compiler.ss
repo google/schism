@@ -390,9 +390,8 @@
       ((cdr pair))))
 
   ;; parse
-  ;; def == (define (name args ...) body)
-  ;;      | (define name body)
-  ;; or return false
+  ;; def = (define (name args ...) body)
+  ;;     | (define name body?)
   (define (definition? def)
     (eq? (car def) 'define))
   (define (definition-name def)
@@ -502,10 +501,14 @@
                              (add-lexicals args args* env))))
       `(,(cons name args*) ,body)))
   (define (define-value def env)
-    (let ((body (if (null? (cddr def))
+    (let* ((name (definition-name def))
+           (env (memp (lambda (n.d)
+                        (eq? name (car n.d)))
+                      env))
+           (body (if (null? (cddr def))
                     `(const ,(void))
                     (parse-expr (caddr def) env))))
-      `(define ,(definition-name def) ,body)))
+      `(define ,name ,body)))
   (define (parse-definition def env)
     (if (function-definition? def)
         (define-function def env)
@@ -547,7 +550,7 @@
                                                      (cdr (parse-library lib imported-envs))))
                                            '()
                                            (cdr libs))))
-        (cons (car first) (append (cdr first) imported-functions)))))
+        (append first imported-functions))))
 
   (define (add-imported imports import-envs env)
     (if (null? imports)

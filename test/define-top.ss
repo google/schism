@@ -18,6 +18,9 @@
 
   (define hole)
   (define f cons)
+  ;; once support for failed tests lands, there should be a test to
+  ;; check for failure when definitions reference variables that
+  ;; haven't been defined yet
   (define y "abc")
   (define x (f y 12))
   (define (w b)
@@ -26,6 +29,4 @@
 
   (define (do-test)
     (and (equal? x '("abc" . 12))
-         (equal? (w y) '(0 . "abc"))))
-
-  )
+         (equal? (w y) '(0 . "abc")))))
