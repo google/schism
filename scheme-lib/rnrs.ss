@@ -17,7 +17,7 @@
           cadar caddar cadddr caddr cadr car cdaddr cdadr cdar cddar cdddr cddr
           cdr char->integer char-ci<? char-numeric? char-whitespace? display
           equal? fold-left fold-right integer->char length list->string list-ref
-          list-tail list? map max memq newline null? peek-char read read-char
+          list-tail list? map max memp memq newline null? peek-char read read-char
           string->list string->symbol string=? symbol->string string-append
           symbol? write write-char zero?)
   (import (schism))
@@ -120,6 +120,11 @@
      ((null? ls) #f)
      ((eq? (car ls) x) ls)
      (else (memq x (cdr ls)))))
+  (define (memp p? ls)
+    (cond
+     ((null? ls) #f)
+     ((p? (car ls)) ls)
+     (else (memp p? (cdr ls)))))
   (define (assp p ls)
     (if (pair? ls)
         (if (p (caar ls))
