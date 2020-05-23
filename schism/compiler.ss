@@ -66,7 +66,7 @@
             (set-diff (cdr set) sub)
             (cons (car set) (set-diff (cdr set) sub)))))
 
-  (define (runtime-imports)
+  (define runtime-imports
     '((bool eq? (scm x) (scm y))
 
       (bool number? (scm x))
@@ -123,7 +123,7 @@
       (bool %file-exists? (scm filename))))
 
   ;; TODO: The %-intrinsics should not be accessible to user code.
-  (define (intrinsics)
+  (define intrinsics
     '((scm %unreachable)
       (i32 bitwise-not (i32 x))
       (i32 bitwise-and (i32 x) (i32 y))
@@ -518,8 +518,8 @@
            (exports (cdar body)) ;; names of the functions exported
            (library-imports (cdadr body))
            (defs (cddr body))
-           (imports (runtime-imports))
-           (env (add-intrinsics (intrinsics)
+           (imports runtime-imports)
+           (env (add-intrinsics intrinsics
                                 (add-imports imports (empty-env))))
            (body-env (add-imported library-imports import-envs env))
            (body-env (add-top-levels defs body-env)))
@@ -1313,11 +1313,10 @@
     ;; Scheme functions are assumed to always return an anyref and
     ;; take some number of anyrefs as inputs.
     `(fn ,(args->types (cdar fn)) (anyref)))
-  (define (annotate-function-name-and-type def)
-    (cons (caar def) (cons (function-type def) def)))
   (define (annotate-function-names-and-types defs)
-    ;; (cons (function-name def) (cons (function-type def) def))
-    (map (lambda (def) (annotate-function-name-and-type def)) defs))
+    (map (lambda (def)
+           (cons (function-name def) (cons (function-type def) def)))
+         defs))
   (define (add-start-function name body annotated-defs)
     (cons (cons name (cons '(fn () ()) `((,name) ,body)))
           annotated-defs))
