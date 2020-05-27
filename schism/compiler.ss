@@ -42,10 +42,6 @@
         (cons x set)))
   (define (remove-duplicates ls same?)
     (fold-right (lambda (x ls) (adjoin x ls same?)) '() ls))
-  (define (filter pred ls)
-    (fold-right (lambda (x ls) (if (pred x) (cons x ls) ls)) '() ls))
-  (define (filter-out pred ls)
-    (filter (lambda (x) (not (pred x))) ls))
   (define (and-map f ls)
     (or (null? ls) (and (f (car ls)) (and-map f (cdr ls)))))
   (define (or-map f ls)
@@ -499,6 +495,9 @@
       `(,(cons name args*) ,body)))
   (define (define-value def env)
     (let* ((name (definition-name def))
+           ;; this uses the property that the most recent definitions
+           ;; appear at beginning of environment alist to detect
+           ;; unbound references in the definition body.
            (env (memp (lambda (n.d) (eq? name (car n.d))) env))
            (body (if (null? (cddr def))
                      `(const ,(void))
@@ -529,11 +528,11 @@
   (define (parse-libraries libs)
     (let ((imported-envs (map make-export-environment libs)))
       (let ((first (parse-library (car libs) imported-envs))
-            (imported-functions (fold-left (lambda (functions lib)
-                                             (append functions
-                                                     (cdr (parse-library lib imported-envs))))
-                                           '()
-                                           (cdr libs))))
+            (imported-functions (fold-right (lambda (lib functions)
+                                              (append (cdr (parse-library lib imported-envs))
+                                                      functions))
+                                            '()
+                                            (cdr libs))))
         (append first imported-functions))))
 
   (define (add-imported imports import-envs env)
@@ -1116,7 +1115,7 @@
            (cache (car env))
            (nglobals (cadr env))
            (fun? (lambda (x) (pair? (car x))))
-           (defs (filter-out fun? fns))
+           (defs (remp fun? fns))
            (fns (filter fun? fns))
            (start (fold-left (lambda (start def)
                                `(seq ,start
@@ -1628,7 +1627,7 @@
            (exports (car exports+fns))
            (fns (cdr exports+fns))
            (imports (filter wasm-import? fns))
-           (fns (filter-out wasm-import? fns))
+           (fns (remp wasm-import? fns))
            (fns (simplify-definitions fns))
            (fns (convert-closures fns))
            (fns+vars+globals+start (lower-literals-in-definitions fns))

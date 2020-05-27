@@ -26,12 +26,12 @@ from GNU Guile.
 As mentioned, the goal has been to prioritize features needed for self
 hosting. Here are some of the current restrictions:
 
-* Functions may only be created with `define`, and particularly only the
-  `(define (foo args ...) body)` form.
 * No use of `syntax-case`, `syntax-rules`, or `define-syntax`.
 * Only one file to start with, so we don't have to figure out how to link
   multiple libraries.
-* Only use `define` to create functions, not global variables or objects.
+* Only use `define` to create top level functions and variables.
+* Only fixed arity functions can be defined, forms such as `(define (f
+  x . args ...)` are not supported.
 * Use a small amount of syntax, because we won't have a proper macro expander at
   first. There is a pass to expand some of the simpler and more useful macros.
 * Restrict data types and operations on those. For now, we can use:
