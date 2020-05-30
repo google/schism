@@ -16,11 +16,11 @@
   (export > append assoc assp assq boolean? caaar caadar caaddr caadr caar
           cadadr cadar caddar cadddr caddr cadr car cdaddr cdadr cdar cddar
           cdddr cddr cdr char->integer char-ci<? char-numeric? char-whitespace?
-          display equal? filter find fold-left fold-right integer->char length
-          list->string list-ref list-tail list? map max member memp memq
-          newline null? peek-char read read-char remove remp remq reverse
-          string->list string->symbol string=? symbol->string string-append
-          symbol? write write-char zero?)
+          display even? equal? filter find fold-left fold-right integer->char
+          iota length list->string list-ref list-tail list? map max member memp
+          memq newline null? odd? peek-char read read-char remove remp remq
+          reverse string->list string->symbol string=? symbol->string
+          string-append symbol? write write-char zero?)
   (import (schism))
 
   (define (display x)
@@ -166,6 +166,15 @@
     (filter (lambda (y) (not (pred y))) ls))
   (define (remq x ls)
     (filter (lambda (y) (not (eq? x y))) ls))
+  (define ($iota i n)
+    (if (eq? i n)
+        '()
+        (cons i ($iota (+ i 1) n))))
+  (define (iota n)
+    (unless (and (number? n) (< -1 n))
+      ;; number? is currently valid because all numbers are i32
+      (error 'iota "not a nonnegative fixnum"))
+    ($iota 0 n))
   (define (length ls)
     (cond
      ((null? ls) 0)
@@ -248,6 +257,10 @@
     (< b a))
   (define (max a b)
     (if (< a b) b a))
+  (define (even? x)
+    (eq? 0 (mod0 x 2)))
+  (define (odd? x)
+    (not (eq? 0 (mod0 x 2))))
   (define (peek-char)
     (let ((i (%peek-char)))
       (if (< i 0)
