@@ -13,13 +13,14 @@
 ;; limitations under the License.
 
 (library (rnrs)
-  (export > append assp assq boolean? caaar caadar caaddr caadr caar cadadr
-          cadar caddar cadddr caddr cadr car cdaddr cdadr cdar cddar cdddr cddr
-          cdr char->integer char-ci<? char-numeric? char-whitespace? display
-          equal? fold-left fold-right integer->char length list->string list-ref
-          list-tail list? map max memp memq newline null? peek-char read read-char
-          string->list string->symbol string=? symbol->string string-append
-          symbol? write write-char zero?)
+  (export > append assoc assp assq boolean? caaar caadar caaddr caadr caar
+          cadadr cadar caddar cadddr caddr cadr car cdaddr cdadr cdar cddar
+          cdddr cddr cdr char->integer char-ci<? char-numeric? char-whitespace?
+          display even? equal? filter find fold-left fold-right integer->char
+          iota length list->string list-ref list-tail list? map max member memp
+          memq newline null? odd? peek-char read read-char remove remp remq
+          reverse string->list string->symbol string=? symbol->string
+          string-append symbol? write write-char zero?)
   (import (schism))
 
   (define (display x)
@@ -115,6 +116,11 @@
   (define (cadadr p) (car (cdadr p)))
   (define (cadddr p) (car (cdddr p)))
   (define (cdaddr p) (cdr (caddr p)))
+  (define (member x ls)
+    (cond
+     ((null? ls) #f)
+     ((equal? x (car ls)) ls)
+     (else (member x (cdr ls)))))
   (define (memp p ls)
     (cond
      ((null? ls) #f)
@@ -125,6 +131,14 @@
      ((null? ls) #f)
      ((eq? (car ls) x) ls)
      (else (memq x (cdr ls)))))
+  (define (assoc x ls)
+    (if (pair? ls)
+        (if (equal? x (caar ls))
+            (car ls)
+            (assoc x (cdr ls)))
+        (if (null? ls)
+            #f
+            (begin (display x) (newline) (error 'assoc "not a list")))))
   (define (assp p ls)
     (if (pair? ls)
         (if (p (caar ls))
@@ -141,6 +155,26 @@
         (if (null? ls)
             #f
             (begin (display x) (newline) (error 'assq "not a list")))))
+  (define (find pred ls)
+    (and (pair? ls)
+         (if (pred (car ls))
+             (car ls)
+             (find pred (cdr ls)))))
+  (define (remove x ls)
+    (filter (lambda (y) (not (equal? x y))) ls))
+  (define (remp pred ls)
+    (filter (lambda (y) (not (pred y))) ls))
+  (define (remq x ls)
+    (filter (lambda (y) (not (eq? x y))) ls))
+  (define ($iota i n)
+    (if (eq? i n)
+        '()
+        (cons i ($iota (+ i 1) n))))
+  (define (iota n)
+    (unless (and (number? n) (< -1 n))
+      ;; number? is currently valid because all numbers are i32
+      (error 'iota "not a nonnegative fixnum"))
+    ($iota 0 n))
   (define (length ls)
     (cond
      ((null? ls) 0)
@@ -154,6 +188,10 @@
     (car (list-tail list n)))
   (define (append a b)
     (fold-right cons b a))
+  (define (filter pred ls)
+    (fold-right (lambda (x ls) (if (pred x) (cons x ls) ls)) '() ls))
+  (define (reverse ls)
+    (fold-left (lambda (x y) (cons y x)) '() ls))
   (define (char->integer c)
     (if (char? c)
         (%char-value c)
@@ -219,6 +257,10 @@
     (< b a))
   (define (max a b)
     (if (< a b) b a))
+  (define (even? x)
+    (eq? 0 (mod0 x 2)))
+  (define (odd? x)
+    (not (eq? 0 (mod0 x 2))))
   (define (peek-char)
     (let ((i (%peek-char)))
       (if (< i 0)
