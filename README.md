@@ -1,7 +1,10 @@
 # Schism
 
-Schism is an experimental self-hosting compiler from a subset of R6RS Scheme to
-WebAssembly.
+Schism is an experimental compiler from Scheme to WebAssembly. It
+enables developers to run programs written in Scheme in the browser or
+server environments such as NodeJS. The compiler supports a subset of
+the R6RS version Scheme, and is self-hosting, meaning Schism is
+implemented in Schism itself.
 
 This is not an officially supported Google product.
 
