@@ -1,3 +1,8 @@
+# NOT ACTIVELY MAINTAINED
+
+This repository is no longer actively maintained. Future development should be
+directed to https://github.com/schism-lang/schism.
+
 # Schism
 
 Schism is an experimental compiler from Scheme to WebAssembly. It
